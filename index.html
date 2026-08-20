@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequenciamento de Produção — Gestamp Taubaté</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b3d78">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sequenciamento">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --blue-dark:#0b3d78;
+    --blue:#0f4c96;
+    --blue-mid:#1560b8;
+    --blue-light:#e8f1fb;
+    --orange:#e8791a;
+    --green-bg:#d7f0e2;
+    --green-line:#39a86b;
+    --red:#c0392b;
+    --gray-head:#3a3f47;
+    --border:#c7d6e8;
+    --bg:#eef2f7;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);font-family:'Segoe UI',Arial,sans-serif;}
+
+  /* ===== HEADER ===== */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    background:#fff;padding:10px 22px;border-bottom:4px solid var(--blue-dark);
+    box-shadow:0 2px 6px rgba(0,0,0,.08);
+  }
+  .brand-left{display:flex;align-items:center;gap:12px;}
+  .gestamp-badge{
+    width:46px;height:46px;border-radius:50%;
+    background:conic-gradient(from 200deg, var(--blue-mid), #7fc6e8, var(--blue-dark));
+    display:flex;align-items:center;justify-content:center;
+    border:2px solid #cfd6dd;box-shadow:inset 0 0 0 3px #fff;
+  }
+  .gestamp-badge span{color:#fff;font-weight:800;font-size:17px;letter-spacing:.5px;text-shadow:0 1px 2px rgba(0,0,0,.25);}
+  .area-name{font-size:15px;font-weight:700;color:#222;text-transform:uppercase;letter-spacing:.5px;}
+  .area-name span{display:block;font-size:11px;font-weight:500;color:#777;text-transform:none;}
+
+  .title-center{text-align:center;flex:1;}
+  .title-center h1{margin:0;font-size:21px;color:var(--blue-dark);font-weight:800;letter-spacing:.3px;}
+  .title-center h2{margin:2px 0 0;font-size:13px;color:var(--blue-mid);font-weight:600;letter-spacing:.5px;}
+
+  .brand-right{display:flex;align-items:center;gap:14px;}
+  .gestamp-logo{display:flex;align-items:center;gap:6px;font-weight:800;font-size:20px;color:var(--blue-dark);}
+  .gestamp-logo .swirl{
+    width:20px;height:20px;border-radius:50%;
+    background:conic-gradient(from 200deg,var(--blue-mid),#7fc6e8,var(--blue-dark));
+  }
+  .clock{font-size:12px;color:#555;text-align:right;}
+  .clock b{display:block;font-size:14px;color:#222;}
+
+  /* ===== AREA NAV ===== */
+  .area-nav{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    background:var(--blue-dark);padding:8px 16px;
+  }
+  .nav-btn{
+    background:rgba(255,255,255,.12);border:none;color:#fff;
+    width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:15px;
+    display:flex;align-items:center;justify-content:center;transition:.15s;
+  }
+  .nav-btn:hover{background:rgba(255,255,255,.28);}
+  .dots{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;}
+  .dot{
+    padding:5px 10px 5px 14px;border-radius:14px;font-size:12px;font-weight:700;
+    color:#cfe0f5;background:rgba(255,255,255,.08);cursor:pointer;
+    border:1px solid rgba(255,255,255,.15);letter-spacing:.3px;transition:.15s;
+    display:flex;align-items:center;gap:6px;
+  }
+  .dot.active{background:#fff;color:var(--blue-dark);}
+  .dot.inactive-area{opacity:.4;}
+  .dot .dot-label{outline:none;}
+  .dot .dot-label[contenteditable="true"]{border-bottom:1px dashed currentColor;padding:0 2px;}
+  .dot .rot-chk{cursor:pointer;accent-color:var(--orange);}
+  .dot .dot-del{
+    background:rgba(192,57,43,.85);color:#fff;border:none;border-radius:50%;
+    width:16px;height:16px;font-size:10px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .dot-add{
+    padding:5px 12px;border-radius:14px;font-size:14px;font-weight:800;
+    color:#fff;background:rgba(255,255,255,.14);cursor:pointer;
+    border:1px dashed rgba(255,255,255,.4);
+  }
+  .fullscreen-btn{
+    background:rgba(255,255,255,.12);border:none;color:#fff;
+    width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;
+    display:flex;align-items:center;justify-content:center;margin-left:6px;
+  }
+  .sync-dot{
+    width:10px;height:10px;border-radius:50%;display:inline-block;margin-left:8px;
+    border:1px solid rgba(255,255,255,.5);
+  }
+  .sync-dot.sync-off{background:#8a93a0;}
+  .sync-dot.sync-ok{background:#3ecf6e;}
+  .sync-dot.sync-syncing{background:var(--orange);animation:syncpulse 1s infinite;}
+  .sync-dot.sync-error{background:var(--red);}
+  @keyframes syncpulse{0%{opacity:1;}50%{opacity:.35;}100%{opacity:1;}}
+  .playpause{
+    background:rgba(255,255,255,.12);border:none;color:#fff;
+    width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;
+    display:flex;align-items:center;justify-content:center;margin-left:6px;
+  }
+  .progress-wrap{
+    height:3px;background:rgba(255,255,255,.15);width:100%;
+  }
+  .progress-bar{height:100%;background:var(--orange);width:0%;transition:width .1s linear;}
+
+  /* ===== TABLE ===== */
+  .table-wrap{padding:12px 14px 20px;overflow-x:auto;}
+  .quadro-title{
+    text-align:center;background:var(--blue-dark);color:#fff;font-weight:800;
+    padding:7px;font-size:clamp(11px,1.1vw,14px);letter-spacing:1px;border-radius:6px 6px 0 0;
+  }
+  .legend{
+    display:flex;gap:18px;justify-content:center;
+    background:#fff;border:1px solid var(--border);border-top:none;padding:5px;
+    font-size:10.5px;color:#555;
+  }
+  .legend .sw{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:4px;vertical-align:middle;}
+  .legend .sw.plan{background:#dbe9fb;border:1px solid #1a4d8f;}
+  .legend .sw.real{background:var(--green-bg);border:1px solid #1f5c3d;}
+  .legend .sw.nao{background:#fadbd8;border:1px solid var(--red);}
+  table{border-collapse:collapse;width:100%;table-layout:fixed;background:#fff;font-size:clamp(8.5px,0.78vw,12px);}
+
+  th,td{border:1px solid var(--border);padding:clamp(2px,0.35vw,5px) 3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;word-break:break-word;}
+  thead .grp{background:var(--blue);color:#fff;font-weight:700;font-size:clamp(8.5px,0.78vw,12px);letter-spacing:.4px;}
+  thead .sub{background:var(--blue-dark);color:#dce8f8;font-weight:600;font-size:clamp(7px,0.62vw,10px);text-transform:uppercase;}
+  thead .sub.lote{background:var(--orange);color:#fff;}
+  th.pn-head, th.celula-head{background:var(--gray-head);color:#fff;font-size:clamp(8px,0.7vw,11px);}
+
+  tbody td.pn{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;}
+  tbody td.celula{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(8px,0.72vw,11px);white-space:normal;}
+  tbody td.hora{background:var(--green-bg);color:#1f5c3d;font-weight:600;}
+  tbody td.obs.rack-azul{background:#2f6fd6 !important;color:#fff !important;font-weight:800;}
+  tbody td.obs.rack-roxo{background:#7d3fc9 !important;color:#fff !important;font-weight:800;}
+  tbody td.obs{color:var(--red);font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;cursor:pointer;}
+  tbody tr:nth-child(even) td.projeto,
+  tbody tr:nth-child(even) td.lote{background:#f7fafd;}
+  td[contenteditable="true"]:focus{outline:2px solid var(--orange);background:#fff8ec !important;color:#1a1a1a !important;-webkit-text-fill-color:#1a1a1a;font-weight:700;white-space:normal;overflow:visible;}
+  td[contenteditable="true"]:focus::selection{background:#ffd699;}
+
+  /* ===== ADMIN ===== */
+  .admin-toggle{
+    position:fixed;bottom:18px;right:18px;z-index:50;
+    background:var(--blue-dark);color:#fff;border:none;border-radius:50%;
+    width:46px;height:46px;font-size:18px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.3);
+  }
+  .admin-bar{
+    display:none;background:#fff3e0;border-bottom:2px solid var(--orange);
+    padding:8px 20px;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;
+  }
+  .admin-bar.open{display:flex;}
+  .admin-bar button{
+    background:var(--blue-dark);color:#fff;border:none;padding:6px 12px;border-radius:5px;
+    cursor:pointer;font-size:12px;font-weight:600;
+  }
+  .admin-bar button.danger{background:var(--red);}
+  .admin-bar input[type=text]{padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;}
+  .admin-hint{color:#8a5a00;font-size:11.5px;}
+  .row-actions{}
+  .del-row-btn{background:var(--red);color:#fff;border:none;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1;}
+
+  /* ===== FILTER BAR ===== */
+  .filter-bar{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:#fff;border-bottom:1px solid var(--border);
+    padding:8px 20px;
+  }
+  .filter-bar input[type=text]{
+    padding:6px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;
+    min-width:240px;flex:1;max-width:340px;
+  }
+  .turno-toggles{display:flex;gap:6px;}
+  .turno-chip{
+    padding:5px 10px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;
+    border:1px solid var(--blue-mid);color:var(--blue-mid);background:#fff;user-select:none;
+  }
+  .turno-chip.active{background:var(--blue-mid);color:#fff;}
+  .chk-obs{font-size:12px;color:#444;display:flex;align-items:center;gap:5px;cursor:pointer;}
+  #clearFiltersBtn{
+    background:#eee;border:1px solid #ccc;border-radius:5px;padding:6px 10px;
+    font-size:11.5px;cursor:pointer;color:#444;
+  }
+  .filter-count{font-size:11.5px;color:#888;margin-left:auto;}
+  .rack-hint{font-size:11px;color:#888;display:flex;align-items:center;gap:5px;}
+  .rack-hint .rack-dot{
+    width:11px;height:11px;border-radius:3px;display:inline-block;
+    background:linear-gradient(90deg,#2f6fd6 50%,#7d3fc9 50%);border:1px solid #999;
+  }
+  th.actions-head, td.row-actions{padding:2px;}
+
+  @media (max-width: 1000px){
+    .title-center h1{font-size:15px;} .title-center h2{font-size:10px;}
+    table{font-size:10px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand-left">
+    <div class="gestamp-badge"><span>G</span></div>
+    <div class="area-name" id="areaNameLabel">NAVE CENTRAL<span>Área atual</span></div>
+  </div>
+  <div class="title-center">
+    <h1>PLANEJAMENTO E CONTROLE DE PRODUÇÃO</h1>
+    <h2>LOGÍSTICA GESTAMP TAUBATÉ</h2>
+  </div>
+  <div class="brand-right">
+    <div class="gestamp-logo"><div class="swirl"></div>Gestamp</div>
+    <div class="clock"><b id="clockTime">--:--</b><span id="clockDate">--/--/----</span></div>
+  </div>
+</div>
+
+<div class="area-nav">
+  <button class="nav-btn" id="prevBtn" title="Área anterior">‹</button>
+  <div class="dots" id="dots"></div>
+  <button class="nav-btn" id="nextBtn" title="Próxima área">›</button>
+  <button class="playpause" id="playPauseBtn" title="Pausar/Retomar rotação">⏸</button>
+  <button class="fullscreen-btn" id="fullscreenBtn" title="Tela cheia">⛶</button>
+  <span class="sync-dot sync-off" id="syncDot"></span>
+  <button class="fullscreen-btn" id="syncConfigBtn" title="Configurar sincronização com Google Sheets">⚙</button>
+</div>
+<div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+
+<div class="filter-bar" id="filterBar">
+  <input type="text" id="searchInput" placeholder="🔎 Buscar por P.N, célula, projeto ou observação...">
+  <div class="turno-toggles" id="turnoToggles"></div>
+  <label class="chk-obs"><input type="checkbox" id="onlyObsChk"> Só com observação</label>
+  <button id="clearFiltersBtn">Limpar filtros</button>
+  <span class="rack-hint"><i class="rack-dot"></i>Clique na OBSERVAÇÃO p/ marcar rack azul/roxo</span>
+  <span class="filter-count" id="filterCount"></span>
+</div>
+
+<button class="admin-toggle" id="adminToggle" title="Modo edição">✎</button>
+<div class="admin-bar" id="adminBar">
+  <button id="addRowBtn">+ Célula</button>
+  <button id="exportBtn">Exportar JSON</button>
+  <button id="importBtn">Importar JSON</button>
+  <button id="exportExcelBtn">📊 Exportar Excel</button>
+  <button id="importExcelBtn">📊 Importar Excel</button>
+  <span class="admin-hint">Modo edição ativo — clique em qualquer célula da tabela para digitar (na OBSERVAÇÃO, é duplo-clique). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação automática, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo. As alterações salvam automaticamente neste navegador.</span>
+</div>
+
+<div class="table-wrap">
+  <div class="quadro-title" id="quadroTitle">QUADRO MQB</div>
+  <table id="mainTable">
+    <colgroup>
+      <col class="col-pn"><col class="col-celula">
+    </colgroup>
+    <thead>
+      <tr id="grpRow"></tr>
+      <tr id="subRow"></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+/* ============ DATA MODEL ============ */
+const TURNOS = ["1T","2T","3T","2D","2N"];
+const TURNO_LABELS = {"1T":"1º TURNO","2T":"2º TURNO","3T":"3º TURNO","2D":"TURNO 2D","2N":"TURNO 2N"};
+const STORAGE_KEY = "gestamp_sequenciamento_producao_v1";
+const ROTATE_SECONDS = 10;
+
+function blankTurno(){ return {projeto:"",lote:"",inicio:"",final:"",obs:"",rack:""}; }
+function blankTurnos(){ const o={}; TURNOS.forEach(t=>o[t]=blankTurno()); return o; }
+
+function defaultData(){
+  const mk = (pn,celula,turnos)=>({pn,celula,turnos});
+  return [
+    {
+      name:'SOLDA HOT',
+      quadro:'QUADRO SOLDA HOT',
+      celulas:[
+        mk('GM','ROCKER - INNER LH - 26311766',{'1T':{projeto:'GM',lote:'175',inicio:'',final:'',obs:'(-2) Melhorias a damanda fecha com as duas células.'},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'175',inicio:'',final:'',obs:'(-2) Melhorias a damanda fecha com as duas células.'}}),
+        mk('GM','ROCKER - INNER LH - 26311766',{'1T':{projeto:'GM',lote:'164',inicio:'',final:'',obs:'(-2) Melhorias a damanda fecha com as duas células.'},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'164',inicio:'',final:'',obs:'(-2) Melhorias a damanda fecha com as duas células.'}}),
+        mk('GM','ROCKER OUTER  (LH) - 26295656',{'1T':{projeto:'GM',lote:'150',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('VW','COLUNA A LE -  PATCHWORK',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'VW',lote:'514',inicio:'',final:'',obs:''},'2N':{projeto:'VW',lote:'514',inicio:'',final:'',obs:''}}),
+        mk('PS','COLUNA A LE - PATCHWORK',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'PS',lote:'596',inicio:'',final:'',obs:''},'2N':{projeto:'PS',lote:'596',inicio:'',final:'',obs:''}}),
+        mk('PS','TRAVERSE AV ASSISE AV D',{'1T':{projeto:'PS',lote:'334',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','COLUNA A -  EXTERNA (LH)',{'1T':{projeto:'GM',lote:'351',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','COLUNA B (LH)',{'1T':{projeto:'GM',lote:'200',inicio:'',final:'',obs:'(-3) CÉLULA EM HE DURANTE A SEMANA'},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'200',inicio:'',final:'',obs:'(-3) CÉLULA EM HE DURANTE A SEMANA'}}),
+        mk('GM','SKI - REF DO ASSOALHO (LH)',{'1T':{projeto:'GM',lote:'200',inicio:'',final:'',obs:'(-1)  Demanda em duas células em 1 turno atende'},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'200',inicio:'',final:'',obs:'(-1)  Demanda em duas células em 1 turno atende'}}),
+        mk('GM','SKI - REF DO ASSOALHO (LH)',{'1T':{projeto:'GM',lote:'175',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','COLUNA A GEM PU (LH/RH)',{'1T':{projeto:'GM',lote:'313',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','COLUNA B GEM PU (LH/RH)',{'1T':{projeto:'GM',lote:'157',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','BRACKET ROCKER INNER',{'1T':{projeto:'GM',lote:'940',inicio:'',final:'',obs:'(-1) MO do MQB suprindo a demanda'},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'940',inicio:'',final:'',obs:'(-1) MO do MQB suprindo a demanda'}}),
+        mk('VW','COLUNA A LE/LD - HATCH',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'VW',lote:'508',inicio:'',final:'',obs:''},'2N':{projeto:'VW',lote:'508',inicio:'',final:'',obs:''}}),
+        mk('VW','Estacionária + cola',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'VW',lote:'515',inicio:'',final:'',obs:''},'2N':{projeto:'VW',lote:'515',inicio:'',final:'',obs:''}}),
+        mk('VW','COLUNA B LE',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'VW',lote:'549',inicio:'',final:'',obs:''},'2N':{projeto:'VW',lote:'549',inicio:'',final:'',obs:''}}),
+        mk('VW','COLUNA B LD',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'VW',lote:'549',inicio:'',final:'',obs:''},'2N':{projeto:'VW',lote:'549',inicio:'',final:'',obs:''}}),
+        mk('SC','CROSS MEMBER WINDSCREEN',{'1T':{projeto:'SC',lote:'182',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'SC',lote:'182',inicio:'',final:'',obs:''}}),
+        mk('PS','PS05/06',{'1T':{projeto:'PS',lote:'282',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('GM','BARRA',{'1T':{projeto:'GM',lote:'94',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'GM',lote:'94',inicio:'',final:'',obs:''}}),
+        mk('PS','PS70/71',{'1T':{projeto:'PS',lote:'207',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('TB','TB4100029A',{'1T':{projeto:'TB',lote:'376',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+        mk('ES','ESTÁ GEM/PS05',{'1T':{projeto:'ES',lote:'376',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'DALTEC',
+      quadro:'QUADRO DALTEC',
+      celulas:[
+        mk('GM+PS','DALTEC',{'1T':{projeto:'GM+PS',lote:'1341',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'RLM',
+      quadro:'QUADRO RLM',
+      celulas:[
+        mk('GM+TB','RLM',{'1T':{projeto:'GM+TB',lote:'1458',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'STAM I',
+      quadro:'QUADRO STAM I',
+      celulas:[
+        mk('','STAM I',{'1T':{projeto:'',lote:'2300',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'STAM II',
+      quadro:'QUADRO STAM II',
+      celulas:[
+        mk('','STAM II',{'1T':{projeto:'',lote:'1360',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'1360',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'BENDER B-CAR',
+      quadro:'QUADRO BENDER B-CAR',
+      celulas:[
+        mk('','BENDER B-CAR',{'1T':{projeto:'',lote:'366',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'366',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'BENDER TOY',
+      quadro:'QUADRO BENDER TOY',
+      celulas:[
+        mk('','BENDER TOY',{'1T':{projeto:'',lote:'546',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'BENDER B-SUV',
+      quadro:'QUADRO BENDER B-SUV',
+      celulas:[
+        mk('','BENDER B-SUV',{'1T':{projeto:'',lote:'581',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'LASER',
+      quadro:'QUADRO LASER',
+      celulas:[
+        mk('','LASER',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'3031',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'3031',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'PH1',
+      quadro:'QUADRO PH1',
+      celulas:[
+        mk('','PH1',{'1T':{projeto:'',lote:'1954',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'PH2',
+      quadro:'QUADRO PH2',
+      celulas:[
+        mk('','PH2',{'1T':{projeto:'',lote:'1022',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'1022',inicio:'',final:'',obs:''}}),
+      ]
+    },
+    {
+      name:'PH3',
+      quadro:'QUADRO PH3',
+      celulas:[
+        mk('','PH3',{'1T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'3T':{projeto:'',lote:'',inicio:'',final:'',obs:''},'2D':{projeto:'',lote:'1609',inicio:'',final:'',obs:''},'2N':{projeto:'',lote:'1609',inicio:'',final:'',obs:''}}),
+      ]
+    },
+  ];
+}
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      // limpa resíduos de uma versão anterior (PLAN/REAL/NÃO) dos campos de horário
+      const junk = new Set(['PLAN','REAL','NÃO']);
+      (parsed||[]).forEach(area=>{
+        (area.celulas||[]).forEach(row=>{
+          Object.values(row.turnos||{}).forEach(to=>{
+            if(junk.has(to.inicio)) to.inicio='';
+            if(junk.has(to.final)) to.final='';
+          });
+        });
+      });
+      return parsed;
+    }
+  }catch(e){ console.warn("Falha ao carregar dados salvos, usando padrão.", e); }
+  return defaultData();
+}
+function saveData(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.areas));
+}
+
+let state = { areas: loadData(), current: 0 };
+let filters = { search:"", onlyObs:false, turnos: {"1T":true,"2T":true,"3T":true,"2D":true,"2N":true} };
+
+// garante que toda área tenha a flag "active" (aparece na rotação automática)
+state.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
+
+/* ============ SINCRONIZAÇÃO COM GOOGLE SHEETS ============ */
+const SYNC_URL_KEY = 'gestamp_seq_sync_url';
+let syncUrl = localStorage.getItem(SYNC_URL_KEY) || '';
+let pollTimer = null;
+const rowSyncTimers = {};
+
+function setSyncStatus(st){
+  const dot = document.getElementById('syncDot');
+  if(!dot) return;
+  dot.className = 'sync-dot sync-'+st;
+  dot.title = {
+    off:'Sincronização desligada — dados só neste navegador. Clique no ⚙ pra configurar.',
+    ok:'Sincronizado com o Google Sheets',
+    syncing:'Sincronizando com o Google Sheets...',
+    error:'Falha ao sincronizar — dados continuam salvos neste navegador'
+  }[st] || '';
+}
+
+function doSyncGet(action, params){
+  if(!syncUrl) return Promise.resolve(null);
+  const qs = new URLSearchParams(Object.assign({action}, params||{})).toString();
+  setSyncStatus('syncing');
+  return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET'})
+    .then(r=>r.json())
+    .then(j=>{ setSyncStatus(j && j.ok ? 'ok' : 'error'); return j; })
+    .catch(err=>{ console.warn('Falha de sincronização:', err); setSyncStatus('error'); return null; });
+}
+
+function syncSaveRowDebounced(area, row){
+  if(!syncUrl || !area || !row) return;
+  const key = area.name+'|'+row.pn+'|'+row.celula;
+  clearTimeout(rowSyncTimers[key]);
+  rowSyncTimers[key] = setTimeout(()=>{
+    doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) });
+  }, 450);
+}
+function syncDeleteRow(area, pn, celula){
+  if(!syncUrl || !area) return;
+  doSyncGet('deleteRow', { area: area.name, pn, celula });
+}
+function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
+  if(!syncUrl || !area) return;
+  doSyncGet('deleteRow', { area: area.name, pn: oldPn, celula: oldCelula }).then(()=>{
+    doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
+  });
+}
+function syncAddArea(area){
+  if(!syncUrl) return;
+  doSyncGet('addArea', { name: area.name, quadro: area.quadro, ativo: (area.active!==false)?'SIM':'NAO' });
+}
+function syncSetAreaMeta(area){
+  if(!syncUrl) return;
+  doSyncGet('setAreaMeta', { name: area.name, quadro: area.quadro, ativo: (area.active!==false)?'SIM':'NAO' });
+}
+function syncRenameArea(oldName, newName){
+  if(!syncUrl) return;
+  doSyncGet('renameArea', { oldName, newName });
+}
+function syncDeleteArea(name){
+  if(!syncUrl) return;
+  doSyncGet('deleteArea', { name });
+}
+
+function loadFromSheet(){
+  return doSyncGet('load', {}).then(j=>{
+    if(j && j.ok && Array.isArray(j.areas) && j.areas.length){
+      j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
+      state.areas = j.areas;
+      if(state.current >= state.areas.length) state.current = 0;
+      saveData();
+      ensureVisibleCurrent();
+      render();
+    }
+  });
+}
+function isTypingNow(){
+  const el = document.activeElement;
+  return !!(el && el.getAttribute && el.getAttribute('contenteditable')==='true');
+}
+function startPolling(){
+  stopPolling();
+  if(!syncUrl) return;
+  pollTimer = setInterval(()=>{
+    if(adminOpen || isTypingNow()) return; // não atropela quem está digitando
+    loadFromSheet();
+  }, 20000);
+}
+function stopPolling(){ clearInterval(pollTimer); pollTimer=null; }
+
+
+/* ============ ROTATION ============ */
+let rotateTimer = null, progressTimer = null, progressPct = 0, paused = false;
+
+function activeAreaIndexes(){
+  const idxs = state.areas.map((a,i)=>i).filter(i=> state.areas[i].active !== false);
+  return idxs.length ? idxs : state.areas.map((a,i)=>i); // fallback: se nada ativo, usa todas
+}
+function ensureVisibleCurrent(){
+  const idxs = activeAreaIndexes();
+  if(idxs.length && !idxs.includes(state.current)){
+    state.current = idxs[0];
+  }
+}
+
+function startRotation(){
+  clearInterval(rotateTimer); clearInterval(progressTimer);
+  progressPct = 0; document.getElementById('progressBar').style.width='0%';
+  if(paused) return;
+  progressTimer = setInterval(()=>{
+    progressPct += 100/(ROTATE_SECONDS*10);
+    document.getElementById('progressBar').style.width = Math.min(progressPct,100)+'%';
+  },100);
+  rotateTimer = setInterval(()=>{
+    const idxs = activeAreaIndexes();
+    if(idxs.length<2) return;
+    const pos = idxs.indexOf(state.current);
+    const nextPos = (pos+1+idxs.length) % idxs.length;
+    goTo(idxs[nextPos]);
+  }, ROTATE_SECONDS*1000);
+}
+function stopRotation(){
+  clearInterval(rotateTimer); clearInterval(progressTimer);
+}
+function goTo(idx){
+  state.current = ((idx % state.areas.length)+state.areas.length)%state.areas.length;
+  render();
+  if(!paused) startRotation();
+}
+
+/* ============ FILTERS ============ */
+function activeTurnos(){
+  return TURNOS.filter(t=>filters.turnos[t]);
+}
+function rowMatchesFilter(row){
+  if(filters.onlyObs){
+    const hasObs = TURNOS.some(t=> (row.turnos[t]||{}).obs);
+    if(!hasObs) return false;
+  }
+  if(filters.search){
+    const q = filters.search.toLowerCase();
+    const hay = [row.pn, row.celula, ...TURNOS.flatMap(t=>{
+      const to = row.turnos[t]||{};
+      return [to.projeto, to.obs];
+    })].filter(Boolean).join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+function renderTurnoToggles(){
+  const wrap = document.getElementById('turnoToggles');
+  wrap.innerHTML = '';
+  TURNOS.forEach(t=>{
+    const chip = document.createElement('div');
+    chip.className = 'turno-chip'+(filters.turnos[t]?' active':'');
+    chip.textContent = t;
+    chip.title = TURNO_LABELS[t];
+    chip.onclick = ()=>{
+      filters.turnos[t] = !filters.turnos[t];
+      // impede zerar todas as colunas
+      if(TURNOS.every(tt=>!filters.turnos[tt])) filters.turnos[t] = true;
+      render();
+    };
+    wrap.appendChild(chip);
+  });
+}
+
+/* ============ RENDER ============ */
+function render(){
+  const area = state.areas[state.current];
+  if(!area){ return; }
+  document.getElementById('areaNameLabel').innerHTML = (area.name||"ÁREA") + '<span>Área atual</span>';
+  document.getElementById('quadroTitle').textContent = area.quadro || "QUADRO";
+  const qEl = document.getElementById('quadroTitle');
+  qEl.setAttribute('contenteditable', adminOpen ? 'true':'false');
+  qEl.onblur = adminOpen ? ()=>{ area.quadro = qEl.textContent.trim()||area.quadro; saveData(); syncSetAreaMeta(area,{quadro:true}); } : null;
+
+  // dots
+  const dotsEl = document.getElementById('dots');
+  dotsEl.innerHTML = "";
+  const visibleAreaIdxs = adminOpen ? state.areas.map((a,i)=>i) : activeAreaIndexes();
+  visibleAreaIdxs.forEach(i=>{
+    const a = state.areas[i];
+    const d = document.createElement('div');
+    d.className = 'dot'+(i===state.current?' active':'')+((a.active===false)?' inactive-area':'');
+
+    if(adminOpen){
+      const chk = document.createElement('input');
+      chk.type='checkbox'; chk.className='rot-chk';
+      chk.checked = a.active!==false;
+      chk.title='Aparece na rotação automática';
+      chk.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        a.active = chk.checked;
+        saveData();
+        render();
+        syncSetAreaMeta(a,{ativo:true});
+      });
+      d.appendChild(chk);
+    }
+
+    const label = document.createElement('span');
+    label.className='dot-label';
+    label.textContent = a.name || ('Área '+(i+1));
+    if(adminOpen){
+      label.setAttribute('contenteditable','true');
+      label.addEventListener('click', (e)=>e.stopPropagation());
+      label.addEventListener('focus', ()=>{ label.dataset.before = label.textContent; });
+      label.addEventListener('blur', ()=>{
+        const oldName = label.dataset.before!==undefined ? label.dataset.before : a.name;
+        const newName = label.textContent.trim() || a.name;
+        a.name = newName;
+        saveData(); 
+        document.getElementById('areaNameLabel').innerHTML = (state.areas[state.current].name||"ÁREA") + '<span>Área atual</span>';
+        if(newName!==oldName) syncRenameArea(oldName, newName);
+      });
+      label.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); label.blur(); } });
+    }
+    d.appendChild(label);
+
+    if(adminOpen){
+      const del = document.createElement('button');
+      del.className='dot-del'; del.textContent='×'; del.title='Excluir área';
+      del.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(state.areas.length<=1){ alert("Precisa manter ao menos 1 área."); return; }
+        if(!confirm('Excluir a área "'+(a.name||'')+'"?')) return;
+        state.areas.splice(i,1);
+        saveData();
+        ensureVisibleCurrent();
+        render();
+        syncDeleteArea(a.name);
+      });
+      d.appendChild(del);
+    }
+
+    d.addEventListener('click', ()=>goTo(i));
+    dotsEl.appendChild(d);
+  });
+
+  if(adminOpen){
+    const addDot = document.createElement('div');
+    addDot.className = 'dot-add';
+    addDot.textContent = '+';
+    addDot.title = 'Nova área';
+    addDot.addEventListener('click', ()=>{
+      const newArea = {name:'NOVA ÁREA', quadro:'QUADRO', active:true, celulas:[]};
+      state.areas.push(newArea);
+      saveData();
+      goTo(state.areas.length-1);
+      syncAddArea(newArea);
+    });
+    dotsEl.appendChild(addDot);
+  }
+
+  renderTurnoToggles();
+  const visibleTurnos = activeTurnos();
+
+  // header rows
+  const grpRow = document.getElementById('grpRow');
+  const subRow = document.getElementById('subRow');
+  grpRow.innerHTML = '<th class="pn-head" rowspan="2">P.N</th><th class="celula-head" rowspan="2">CÉLULA</th>';
+  subRow.innerHTML = '';
+  visibleTurnos.forEach(t=>{
+    const th = document.createElement('th');
+    th.className='grp'; th.colSpan=5; th.textContent = TURNO_LABELS[t];
+    grpRow.appendChild(th);
+    ['PROJETO','LOTE','INÍCIO','FINAL','OBSERVAÇÃO'].forEach(lbl=>{
+      const sub = document.createElement('th');
+      sub.className = 'sub'+(lbl==='LOTE'?' lote':'');
+      sub.textContent = lbl;
+      subRow.appendChild(sub);
+    });
+  });
+  if(adminOpen){
+    const thA = document.createElement('th');
+    thA.className='actions-head'; thA.rowSpan=2; thA.textContent='';
+    grpRow.appendChild(thA);
+  }
+
+  // colgroup (rebuild turno cols) — larguras em % que sempre somam 100%, sem scroll horizontal
+  const table = document.getElementById('mainTable');
+  let colgroup = table.querySelector('colgroup');
+  const n = visibleTurnos.length;
+  const actionsPct = adminOpen ? 3.2 : 0;
+  const budget = 100 - actionsPct;
+  const pnPct = budget * 0.055;
+  const celulaPct = budget * 0.10;
+  const turnosBudget = budget - pnPct - celulaPct;
+  const perTurno = turnosBudget / n;
+  const wProjeto = perTurno*0.14, wLote = perTurno*0.13, wInicio = perTurno*0.13, wFinal = perTurno*0.13, wObs = perTurno*0.47;
+
+  colgroup.innerHTML = `<col style="width:${pnPct}%"><col style="width:${celulaPct}%">`;
+  visibleTurnos.forEach(()=>{
+    colgroup.innerHTML += `<col style="width:${wProjeto}%"><col style="width:${wLote}%"><col style="width:${wInicio}%"><col style="width:${wFinal}%"><col style="width:${wObs}%">`;
+  });
+  if(adminOpen) colgroup.innerHTML += `<col style="width:${actionsPct}%">`;
+
+  // body (aplica filtros)
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = "";
+  const allRows = area.celulas||[];
+  const filteredRows = allRows.filter(rowMatchesFilter);
+
+  filteredRows.forEach((row)=>{
+    const tr = document.createElement('tr');
+
+    tr.appendChild(editableCell(row.pn, (v,old)=>{
+      row.pn=v; saveData();
+      if(v!==old) syncRowIdentityChange(area, old, row.celula, v, row.celula, row);
+    }, 'pn'));
+    tr.appendChild(editableCell(row.celula, (v,old)=>{
+      row.celula=v; saveData();
+      if(v!==old) syncRowIdentityChange(area, row.pn, old, row.pn, v, row);
+    }, 'celula'));
+
+    visibleTurnos.forEach(t=>{
+      const to = row.turnos[t] || (row.turnos[t]=blankTurno());
+      tr.appendChild(editableCell(to.projeto, v=>{to.projeto=v; saveData(); syncSaveRowDebounced(area,row);}, 'projeto'));
+      tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); syncSaveRowDebounced(area,row);}, 'lote'));
+      tr.appendChild(editableCell(to.inicio, v=>{to.inicio=v; saveData(); syncSaveRowDebounced(area,row);}, 'hora'));
+      tr.appendChild(editableCell(to.final, v=>{to.final=v; saveData(); syncSaveRowDebounced(area,row);}, 'hora'));
+      tr.appendChild(obsCell(to, ()=>syncSaveRowDebounced(area,row)));
+    });
+
+    if(adminOpen){
+      const tdA = document.createElement('td');
+      tdA.className='row-actions';
+      const btn = document.createElement('button');
+      btn.className='del-row-btn'; btn.textContent='×'; btn.title='Excluir linha';
+      btn.onclick = ()=>{
+        if(!confirm('Excluir a linha "'+(row.celula||row.pn)+'"?')) return;
+        const idx = allRows.indexOf(row);
+        if(idx>-1) allRows.splice(idx,1);
+        saveData(); render();
+        syncDeleteRow(area, row.pn, row.celula);
+      };
+      tdA.appendChild(btn);
+      tr.appendChild(tdA);
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  const countEl = document.getElementById('filterCount');
+  countEl.textContent = (filteredRows.length===allRows.length)
+    ? allRows.length+' linha(s)'
+    : filteredRows.length+' de '+allRows.length+' linha(s)';
+
+  refreshAdminRowState();
+}
+
+function editableCell(value, onSave, cls){
+  const td = document.createElement('td');
+  td.className = cls;
+  td.spellcheck = false;
+  td.textContent = (value===undefined||value===null) ? "" : value;
+  td.addEventListener('focus', ()=>{ if(adminOpen) td.dataset.before = td.textContent; });
+  td.addEventListener('blur', ()=>{
+    if(!adminOpen) return;
+    const newVal = td.textContent.trim();
+    const oldVal = td.dataset.before!==undefined ? td.dataset.before : newVal;
+    onSave(newVal, oldVal);
+  });
+  td.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); td.blur(); } });
+  return td;
+}
+
+/* célula de OBSERVAÇÃO: clique alterna a cor do rack (branco → azul → roxo);
+   no modo edição, duplo-clique permite digitar a observação */
+function obsCell(to, onSync){
+  const td = document.createElement('td');
+  const rack = to.rack || '';
+  td.className = 'obs' + (rack ? (' rack-'+rack) : '');
+  td.textContent = (to.obs===undefined||to.obs===null) ? "" : to.obs;
+  td.setAttribute('contenteditable','false');
+  td.spellcheck = false;
+  td.title = adminOpen
+    ? 'Clique: marcar rack (branco → azul → roxo)  ·  Duplo-clique: editar observação'
+    : 'Clique: marcar rack (branco → azul → roxo)';
+
+  td.addEventListener('click', ()=>{
+    if(td.getAttribute('contenteditable')==='true') return;
+    const order = ['','azul','roxo'];
+    const idx = order.indexOf(to.rack||'');
+    to.rack = order[(idx+1)%order.length];
+    saveData(); render();
+    if(onSync) onSync();
+  });
+
+  if(adminOpen){
+    td.addEventListener('dblclick', (e)=>{
+      e.stopPropagation();
+      td.setAttribute('contenteditable','true');
+      td.focus();
+      window.getSelection().selectAllChildren(td);
+    });
+    td.addEventListener('blur', ()=>{
+      if(td.getAttribute('contenteditable')==='true'){
+        to.obs = td.textContent.trim();
+        td.setAttribute('contenteditable','false');
+        saveData();
+        if(onSync) onSync();
+      }
+    });
+    td.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); td.blur(); } });
+  }
+  return td;
+}
+
+/* ============ ADMIN MODE ============ */
+let adminOpen = false;
+function refreshAdminRowState(){
+  document.querySelectorAll('#tbody td:not(.row-actions)').forEach(td=>{
+    td.setAttribute('contenteditable', adminOpen ? 'true':'false');
+  });
+}
+document.getElementById('adminToggle').addEventListener('click', ()=>{
+  adminOpen = !adminOpen;
+  document.getElementById('adminBar').classList.toggle('open', adminOpen);
+  if(adminOpen){
+    paused = true; stopRotation(); document.getElementById('playPauseBtn').textContent='▶';
+  } else {
+    ensureVisibleCurrent();
+  }
+  render();
+});
+
+document.getElementById('addRowBtn').addEventListener('click', ()=>{
+  const area = state.areas[state.current];
+  const newRow = {pn:"NOVO P.N", celula:"NOVA CÉLULA", turnos: blankTurnos()};
+  area.celulas.push(newRow);
+  saveData(); render();
+  syncSaveRowDebounced(area, newRow, true);
+  // foca a célula recém-criada para edição imediata
+  requestAnimationFrame(()=>{
+    const cells = document.querySelectorAll('#tbody tr:last-child td.pn');
+    if(cells.length){ const el = cells[cells.length-1]; el.focus(); document.execCommand && window.getSelection().selectAllChildren(el); }
+  });
+});
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(state.areas,null,2)],{type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='sequenciamento_producao.json'; a.click();
+  URL.revokeObjectURL(url);
+});
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
+  inp.onchange = ()=>{
+    const file = inp.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const data = JSON.parse(reader.result);
+        if(!Array.isArray(data)) throw new Error("formato inválido");
+        state.areas = data; state.current=0; saveData(); render();
+      }catch(e){ alert("Arquivo inválido: "+e.message); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+});
+
+/* ============ EXCEL (SheetJS) ============ */
+function exportExcel(){
+  if(typeof XLSX === 'undefined'){ alert('Biblioteca de Excel não carregou (verifique a internet). Tente novamente.'); return; }
+  const dataRows = [];
+  state.areas.forEach(area=>{
+    (area.celulas||[]).forEach(row=>{
+      TURNOS.forEach(t=>{
+        const to = row.turnos[t] || blankTurno();
+        // só exporta linha se houver algum dado nesse turno, evita planilha poluída de vazios
+        const temDado = to.projeto || to.lote || to.inicio || to.final || to.obs || to.rack;
+        if(!temDado) return;
+        dataRows.push({
+          'Área': area.name || '',
+          'Quadro': area.quadro || '',
+          'P.N': row.pn || '',
+          'Célula': row.celula || '',
+          'Turno': t,
+          'Projeto': to.projeto || '',
+          'Lote': to.lote || '',
+          'Rack (azul/roxo/vazio)': to.rack || '',
+          'Início': to.inicio || '',
+          'Final': to.final || '',
+          'Observação': to.obs || ''
+        });
+      });
+      // garante que células sem nenhum turno preenchido também apareçam (linha "vazia" de referência)
+      const temAlgum = TURNOS.some(t=>{
+        const to = row.turnos[t]||{};
+        return to.projeto || to.lote || to.inicio || to.final || to.obs || to.rack;
+      });
+      if(!temAlgum){
+        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Projeto':'','Lote':'','Rack (azul/roxo/vazio)':'','Início':'','Final':'','Observação':''});
+      }
+    });
+  });
+  const areaRows = state.areas.map(a=>({
+    'Área': a.name || '',
+    'Quadro': a.quadro || '',
+    'Ativo na rotação (SIM/NÃO)': (a.active!==false) ? 'SIM' : 'NÃO'
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const wsAreas = XLSX.utils.json_to_sheet(areaRows);
+  const wsDados = XLSX.utils.json_to_sheet(dataRows);
+  XLSX.utils.book_append_sheet(wb, wsAreas, 'Áreas');
+  XLSX.utils.book_append_sheet(wb, wsDados, 'Dados');
+  const ts = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  XLSX.writeFile(wb, 'sequenciamento_producao_'+ts+'.xlsx');
+}
+
+function importExcelFile(file){
+  if(typeof XLSX === 'undefined'){ alert('Biblioteca de Excel não carregou (verifique a internet). Tente novamente.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const dadosSheet = wb.Sheets['Dados'] || wb.Sheets[wb.SheetNames[0]];
+      const rows = dadosSheet ? XLSX.utils.sheet_to_json(dadosSheet, {defval:''}) : [];
+      const areasSheet = wb.Sheets['Áreas'];
+      const areaMeta = areasSheet ? XLSX.utils.sheet_to_json(areasSheet, {defval:''}) : [];
+
+      const areaOrder = [];
+      const areaMap = {};
+      areaMeta.forEach(r=>{
+        const name = String(r['Área']||'').trim(); if(!name) return;
+        if(!areaMap[name]){
+          const ativoTxt = String(r['Ativo na rotação (SIM/NÃO)'] ?? r['Ativo na rotação'] ?? 'SIM').trim().toUpperCase();
+          areaMap[name] = { name, quadro: String(r['Quadro']||'QUADRO').trim()||'QUADRO', active: ativoTxt!=='NÃO' && ativoTxt!=='NAO', celulas:[] };
+          areaOrder.push(name);
+        }
+      });
+
+      const cellIndex = {};
+      rows.forEach(r=>{
+        const areaName = String(r['Área']||'').trim(); if(!areaName) return;
+        const pn = String(r['P.N']||'').trim();
+        const celula = String(r['Célula']||'').trim();
+        const turno = String(r['Turno']||'').trim().toUpperCase();
+
+        if(!areaMap[areaName]){
+          areaMap[areaName] = { name:areaName, quadro:'QUADRO', active:true, celulas:[] };
+          areaOrder.push(areaName);
+        }
+        const key = areaName+'|'+pn+'|'+celula;
+        let rowObj = cellIndex[key];
+        if(!rowObj){
+          rowObj = { pn, celula, turnos: blankTurnos() };
+          cellIndex[key] = rowObj;
+          areaMap[areaName].celulas.push(rowObj);
+        }
+        if(!TURNOS.includes(turno)) return; // linha de referência sem turno preenchido
+        const rackVal = String(r['Rack (azul/roxo/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
+        rowObj.turnos[turno] = {
+          projeto: String(r['Projeto']||''),
+          lote: String(r['Lote']||''),
+          rack: (rackVal==='azul'||rackVal==='roxo') ? rackVal : '',
+          inicio: String(r['Início']||''),
+          final: String(r['Final']||''),
+          obs: String(r['Observação']||'')
+        };
+      });
+
+      const newAreas = areaOrder.map(n=>areaMap[n]);
+      if(newAreas.length===0){ alert('Nenhuma área/dado válido encontrado na planilha. Confira as colunas "Área", "P.N", "Célula" e "Turno".'); return; }
+      if(!confirm('Importar '+newAreas.length+' área(s) e substituir TODOS os dados atuais do painel?')) return;
+      state.areas = newAreas;
+      state.current = 0;
+      saveData();
+      ensureVisibleCurrent();
+      render();
+      alert('Importação concluída: '+newAreas.length+' área(s) carregada(s).');
+    }catch(err){
+      alert('Erro ao importar o Excel: '+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
+document.getElementById('importExcelBtn').addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls';
+  inp.onchange = ()=>{ const f = inp.files[0]; if(f) importExcelFile(f); };
+  inp.click();
+});
+
+/* ============ NAV BUTTONS ============ */
+document.getElementById('prevBtn').addEventListener('click', ()=>goTo(state.current-1));
+document.getElementById('nextBtn').addEventListener('click', ()=>goTo(state.current+1));
+document.getElementById('playPauseBtn').addEventListener('click', ()=>{
+  paused = !paused;
+  document.getElementById('playPauseBtn').textContent = paused ? '▶' : '⏸';
+  if(paused){ stopRotation(); } else { startRotation(); }
+});
+
+/* ============ FULLSCREEN ============ */
+document.getElementById('fullscreenBtn').addEventListener('click', ()=>{
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  } else {
+    document.exitFullscreen().catch(()=>{});
+  }
+});
+document.addEventListener('fullscreenchange', ()=>{
+  document.getElementById('fullscreenBtn').textContent = document.fullscreenElement ? '⤦' : '⛶';
+});
+
+/* ============ SYNC CONFIG BUTTON ============ */
+document.getElementById('syncConfigBtn').addEventListener('click', ()=>{
+  const val = prompt(
+    'Cole aqui a URL do Google Apps Script (App da Web, termina com /exec).\n'+
+    'Deixe em branco e confirme para DESLIGAR a sincronização.',
+    syncUrl
+  );
+  if(val===null) return;
+  syncUrl = val.trim();
+  localStorage.setItem(SYNC_URL_KEY, syncUrl);
+  if(syncUrl){
+    loadFromSheet();
+    startPolling();
+  } else {
+    setSyncStatus('off');
+    stopPolling();
+  }
+});
+
+/* ============ FILTER BAR EVENTS ============ */
+let searchDebounce = null;
+document.getElementById('searchInput').addEventListener('input', (e)=>{
+  clearTimeout(searchDebounce);
+  const val = e.target.value;
+  searchDebounce = setTimeout(()=>{ filters.search = val.trim(); render(); }, 180);
+});
+document.getElementById('onlyObsChk').addEventListener('change', (e)=>{
+  filters.onlyObs = e.target.checked; render();
+});
+document.getElementById('clearFiltersBtn').addEventListener('click', ()=>{
+  filters.search = ""; filters.onlyObs = false;
+  TURNOS.forEach(t=>filters.turnos[t]=true);
+  document.getElementById('searchInput').value = "";
+  document.getElementById('onlyObsChk').checked = false;
+  render();
+});
+
+/* ============ CLOCK ============ */
+function tickClock(){
+  const now = new Date();
+  document.getElementById('clockTime').textContent = now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('clockDate').textContent = now.toLocaleDateString('pt-BR');
+}
+tickClock(); setInterval(tickClock,1000);
+
+/* ============ INIT ============ */
+render();
+startRotation();
+if(syncUrl){
+  loadFromSheet();
+  startPolling();
+} else {
+  setSyncStatus('off');
+}
+
+/* ============ PWA: registra service worker (instalável como app) ============ */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{
+      console.warn('Service worker não registrado (ok se estiver rodando como arquivo local sem servidor).');
+    });
+  });
+}
+</script>
+</body>
+</html>
