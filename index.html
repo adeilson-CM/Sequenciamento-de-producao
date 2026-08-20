@@ -145,6 +145,7 @@
   tbody td.hora{background:var(--green-bg);color:#1f5c3d;font-weight:600;}
   tbody td.obs.rack-azul{background:#2f6fd6 !important;color:#fff !important;font-weight:800;}
   tbody td.obs.rack-roxo{background:#7d3fc9 !important;color:#fff !important;font-weight:800;}
+  tbody td.obs.rack-vermelho{background:#d6362f !important;color:#fff !important;font-weight:800;}
   tbody td.obs{color:var(--red);font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;cursor:pointer;}
   tbody tr:nth-child(even) td.projeto,
   tbody tr:nth-child(even) td.lote{background:#f7fafd;}
@@ -196,8 +197,8 @@
   .filter-count{font-size:11.5px;color:#888;margin-left:auto;}
   .rack-hint{font-size:11px;color:#888;display:flex;align-items:center;gap:5px;}
   .rack-hint .rack-dot{
-    width:11px;height:11px;border-radius:3px;display:inline-block;
-    background:linear-gradient(90deg,#2f6fd6 50%,#7d3fc9 50%);border:1px solid #999;
+    width:14px;height:11px;border-radius:3px;display:inline-block;
+    background:linear-gradient(90deg,#2f6fd6 33%,#7d3fc9 33%,#7d3fc9 66%,#d6362f 66%);border:1px solid #999;
   }
   th.actions-head, td.row-actions{padding:2px;}
 
@@ -240,7 +241,7 @@
   <div class="turno-toggles" id="turnoToggles"></div>
   <label class="chk-obs"><input type="checkbox" id="onlyObsChk"> Só com observação</label>
   <button id="clearFiltersBtn">Limpar filtros</button>
-  <span class="rack-hint"><i class="rack-dot"></i>Clique na OBSERVAÇÃO p/ marcar rack azul/roxo</span>
+  <span class="rack-hint"><i class="rack-dot"></i>Clique na OBSERVAÇÃO p/ marcar rack azul/roxo/vermelho</span>
   <span class="filter-count" id="filterCount"></span>
 </div>
 
@@ -251,7 +252,7 @@
   <button id="importBtn">Importar JSON</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Modo edição ativo — clique em qualquer célula da tabela para digitar (na OBSERVAÇÃO, é duplo-clique). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação automática, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo. As alterações salvam automaticamente neste navegador.</span>
+  <span class="admin-hint">Modo edição ativo — clique em qualquer célula da tabela para digitar (na OBSERVAÇÃO, é duplo-clique). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação automática, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno (não editáveis). As alterações salvam automaticamente neste navegador.</span>
 </div>
 
 <div class="table-wrap">
@@ -272,6 +273,30 @@
 /* ============ DATA MODEL ============ */
 const TURNOS = ["1T","2T","3T","2D","2N"];
 const TURNO_LABELS = {"1T":"1º TURNO","2T":"2º TURNO","3T":"3º TURNO","2D":"TURNO 2D","2N":"TURNO 2N"};
+// horário padrão fixo de cada turno — não é mais digitado célula a célula
+const TURNO_HORARIOS = {
+  "1T": {inicio:"06:00", final:"15:00"},
+  "2T": {inicio:"15:00", final:"23:00"},
+  "3T": {inicio:"23:00", final:"06:00"},
+  "2D": {inicio:"06:00", final:"18:00"},
+  "2N": {inicio:"18:00", final:"06:00"}
+};
+// corrige qualquer valor de horário "sujo" (ex: data completa vinda de importação de Excel/Sheets)
+// e aplica sempre o padrão oficial de cada turno, em todas as áreas/células
+function normalizeAreas(list){
+  (list||[]).forEach(a=>{
+    (a.celulas||[]).forEach(row=>{
+      if(!row.turnos) row.turnos = {};
+      TURNOS.forEach(t=>{
+        if(!row.turnos[t]) row.turnos[t] = blankTurno();
+        const h = TURNO_HORARIOS[t];
+        row.turnos[t].inicio = h.inicio;
+        row.turnos[t].final = h.final;
+      });
+    });
+  });
+  return list;
+}
 const STORAGE_KEY = "gestamp_sequenciamento_producao_v1";
 const ROTATE_SECONDS = 10;
 
@@ -414,7 +439,7 @@ function saveData(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.areas));
 }
 
-let state = { areas: loadData(), current: 0 };
+let state = { areas: normalizeAreas(loadData()), current: 0 };
 let filters = { search:"", onlyObs:false, turnos: {"1T":true,"2T":true,"3T":true,"2D":true,"2N":true} };
 
 // garante que toda área tenha a flag "active" (aparece na rotação automática)
@@ -525,6 +550,7 @@ function loadFromSheet(){
 
     if(j.areas.length){
       j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
+      normalizeAreas(j.areas);
       state.areas = j.areas;
       if(state.current >= state.areas.length) state.current = 0;
       saveData();
@@ -777,8 +803,8 @@ function render(){
       const to = row.turnos[t] || (row.turnos[t]=blankTurno());
       tr.appendChild(editableCell(to.projeto, v=>{to.projeto=v; saveData(); syncSaveRowDebounced(area,row);}, 'projeto'));
       tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); syncSaveRowDebounced(area,row);}, 'lote'));
-      tr.appendChild(editableCell(to.inicio, v=>{to.inicio=v; saveData(); syncSaveRowDebounced(area,row);}, 'hora'));
-      tr.appendChild(editableCell(to.final, v=>{to.final=v; saveData(); syncSaveRowDebounced(area,row);}, 'hora'));
+      tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].inicio));
+      tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].final));
       tr.appendChild(obsCell(to, ()=>syncSaveRowDebounced(area,row)));
     });
 
@@ -809,6 +835,15 @@ function render(){
   refreshAdminRowState();
 }
 
+// célula de horário fixo (INÍCIO/FINAL) — não editável, sempre o padrão do turno
+function fixedHoraCell(value){
+  const td = document.createElement('td');
+  td.className = 'hora';
+  td.textContent = value;
+  td.title = 'Horário padrão do turno (fixo)';
+  return td;
+}
+
 function editableCell(value, onSave, cls){
   const td = document.createElement('td');
   td.className = cls;
@@ -825,7 +860,7 @@ function editableCell(value, onSave, cls){
   return td;
 }
 
-/* célula de OBSERVAÇÃO: clique alterna a cor do rack (branco → azul → roxo);
+/* célula de OBSERVAÇÃO: clique alterna a cor do rack (branco → azul → roxo → vermelho);
    no modo edição, duplo-clique permite digitar a observação */
 function obsCell(to, onSync){
   const td = document.createElement('td');
@@ -835,12 +870,12 @@ function obsCell(to, onSync){
   td.setAttribute('contenteditable','false');
   td.spellcheck = false;
   td.title = adminOpen
-    ? 'Clique: marcar rack (branco → azul → roxo)  ·  Duplo-clique: editar observação'
-    : 'Clique: marcar rack (branco → azul → roxo)';
+    ? 'Clique: marcar rack (branco → azul → roxo → vermelho)  ·  Duplo-clique: editar observação'
+    : 'Clique: marcar rack (branco → azul → roxo → vermelho)';
 
   td.addEventListener('click', ()=>{
     if(td.getAttribute('contenteditable')==='true') return;
-    const order = ['','azul','roxo'];
+    const order = ['','azul','roxo','vermelho'];
     const idx = order.indexOf(to.rack||'');
     to.rack = order[(idx+1)%order.length];
     saveData(); render();
@@ -912,7 +947,7 @@ document.getElementById('importBtn').addEventListener('click', ()=>{
       try{
         const data = JSON.parse(reader.result);
         if(!Array.isArray(data)) throw new Error("formato inválido");
-        state.areas = data; state.current=0; saveData(); render();
+        state.areas = normalizeAreas(data); state.current=0; saveData(); render();
       }catch(e){ alert("Arquivo inválido: "+e.message); }
     };
     reader.readAsText(file);
@@ -939,7 +974,7 @@ function exportExcel(){
           'Turno': t,
           'Projeto': to.projeto || '',
           'Lote': to.lote || '',
-          'Rack (azul/roxo/vazio)': to.rack || '',
+          'Rack (azul/roxo/vermelho/vazio)': to.rack || '',
           'Início': to.inicio || '',
           'Final': to.final || '',
           'Observação': to.obs || ''
@@ -951,7 +986,7 @@ function exportExcel(){
         return to.projeto || to.lote || to.inicio || to.final || to.obs || to.rack;
       });
       if(!temAlgum){
-        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Projeto':'','Lote':'','Rack (azul/roxo/vazio)':'','Início':'','Final':'','Observação':''});
+        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Projeto':'','Lote':'','Rack (azul/roxo/vermelho/vazio)':'','Início':'','Final':'','Observação':''});
       }
     });
   });
@@ -1011,11 +1046,11 @@ function importExcelFile(file){
           areaMap[areaName].celulas.push(rowObj);
         }
         if(!TURNOS.includes(turno)) return; // linha de referência sem turno preenchido
-        const rackVal = String(r['Rack (azul/roxo/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
+        const rackVal = String(r['Rack (azul/roxo/vermelho/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
         rowObj.turnos[turno] = {
           projeto: String(r['Projeto']||''),
           lote: String(r['Lote']||''),
-          rack: (rackVal==='azul'||rackVal==='roxo') ? rackVal : '',
+          rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho') ? rackVal : '',
           inicio: String(r['Início']||''),
           final: String(r['Final']||''),
           obs: String(r['Observação']||'')
@@ -1025,7 +1060,7 @@ function importExcelFile(file){
       const newAreas = areaOrder.map(n=>areaMap[n]);
       if(newAreas.length===0){ alert('Nenhuma área/dado válido encontrado na planilha. Confira as colunas "Área", "P.N", "Célula" e "Turno".'); return; }
       if(!confirm('Importar '+newAreas.length+' área(s) e substituir TODOS os dados atuais do painel?')) return;
-      state.areas = newAreas;
+      state.areas = normalizeAreas(newAreas);
       state.current = 0;
       saveData();
       ensureVisibleCurrent();
