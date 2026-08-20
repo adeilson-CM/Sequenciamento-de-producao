@@ -422,7 +422,9 @@ state.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
 
 /* ============ SINCRONIZAÇÃO COM GOOGLE SHEETS ============ */
 const SYNC_URL_KEY = 'gestamp_seq_sync_url';
-let syncUrl = localStorage.getItem(SYNC_URL_KEY) || '';
+const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbyTT3VSsu5uj3f6qAc1Ch7bpMCFCbWEKQl-AS_tpXwdMujI0zwmQMr-WGuBxYX9WGQt/exec';
+const storedSyncPref = localStorage.getItem(SYNC_URL_KEY);
+let syncUrl = (storedSyncPref === null) ? DEFAULT_SYNC_URL : (storedSyncPref === 'OFF' ? '' : storedSyncPref);
 let pollTimer = null;
 const rowSyncTimers = {};
 
@@ -1031,13 +1033,13 @@ document.addEventListener('fullscreenchange', ()=>{
 /* ============ SYNC CONFIG BUTTON ============ */
 document.getElementById('syncConfigBtn').addEventListener('click', ()=>{
   const val = prompt(
-    'Cole aqui a URL do Google Apps Script (App da Web, termina com /exec).\n'+
-    'Deixe em branco e confirme para DESLIGAR a sincronização.',
+    'URL do Google Apps Script usada pra sincronizar (App da Web, termina com /exec).\n'+
+    'Deixe em branco e confirme para DESLIGAR a sincronização neste dispositivo.',
     syncUrl
   );
   if(val===null) return;
   syncUrl = val.trim();
-  localStorage.setItem(SYNC_URL_KEY, syncUrl);
+  localStorage.setItem(SYNC_URL_KEY, syncUrl || 'OFF');
   if(syncUrl){
     loadFromSheet();
     startPolling();
