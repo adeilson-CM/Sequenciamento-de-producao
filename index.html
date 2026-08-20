@@ -462,11 +462,29 @@ function syncDeleteRow(area, pn, celula){
   if(!syncUrl || !area) return;
   doSyncGet('deleteRow', { area: area.name, pn, celula });
 }
+// se P.N e CÉLULA forem editados quase juntos (caso comum ao renomear uma linha nova),
+// agrupa as duas mudanças numa única troca (apaga o registro antigo, grava o novo),
+// em vez de disparar duas operações concorrentes que podem se atropelar na planilha.
+const identityPending = new WeakMap();
 function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
   if(!syncUrl || !area) return;
-  doSyncGet('deleteRow', { area: area.name, pn: oldPn, celula: oldCelula }).then(()=>{
-    doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
-  });
+  let rec = identityPending.get(row);
+  if(!rec){
+    rec = { oldPn, oldCelula };
+    identityPending.set(row, rec);
+  }
+  clearTimeout(rec.timer);
+  rec.timer = setTimeout(()=>{
+    const finalOldPn = rec.oldPn, finalOldCelula = rec.oldCelula;
+    identityPending.delete(row);
+    if(finalOldPn===newPn && finalOldCelula===newCelula){
+      doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
+      return;
+    }
+    doSyncGet('deleteRow', { area: area.name, pn: finalOldPn, celula: finalOldCelula }).then(()=>{
+      doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
+    });
+  }, 550);
 }
 function syncAddArea(area){
   if(!syncUrl) return;
@@ -485,9 +503,27 @@ function syncDeleteArea(name){
   doSyncGet('deleteArea', { name });
 }
 
+function countCells(areasList){
+  return (areasList||[]).reduce((n,a)=> n + ((a.celulas||[]).length), 0);
+}
+let firstLoadDone = false;
 function loadFromSheet(){
   return doSyncGet('load', {}).then(j=>{
-    if(j && j.ok && Array.isArray(j.areas) && j.areas.length){
+    if(!(j && j.ok && Array.isArray(j.areas))) return;
+
+    const newCount = countCells(j.areas);
+    const curCount = countCells(state.areas);
+
+    // trava de segurança: nunca deixa uma resposta vazia/reduzida da planilha
+    // apagar dados locais já existentes (protege contra falha temporária no Sheets)
+    if(firstLoadDone && curCount>0 && newCount===0){
+      console.warn('Sincronização retornou vazia — mantendo os dados locais para não perder nada. Confira a planilha/Apps Script.');
+      setSyncStatus('error');
+      return;
+    }
+    firstLoadDone = true;
+
+    if(j.areas.length){
       j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
       state.areas = j.areas;
       if(state.current >= state.areas.length) state.current = 0;
