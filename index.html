@@ -168,6 +168,9 @@
     cursor:pointer;font-size:12px;font-weight:600;
   }
   .admin-bar button.danger{background:var(--red);}
+  .admin-bar button.save-sheet-btn{background:#1f8f4e;font-weight:800;}
+  .admin-bar button.save-sheet-btn:hover{background:#197b43;}
+  .admin-bar button.save-sheet-btn:disabled{opacity:.6;cursor:wait;}
   .admin-bar input[type=text]{padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;}
   .admin-hint{color:#8a5a00;font-size:11.5px;}
   .row-actions{}
@@ -248,14 +251,16 @@
 <button class="admin-toggle" id="adminToggle" title="Modo edição">✎</button>
 <div class="admin-bar" id="adminBar">
   <button id="addRowBtn">+ Célula</button>
+  <button id="saveSheetBtn" class="save-sheet-btn">💾 Salvar no Sheets</button>
   <button id="exportBtn">Exportar JSON</button>
   <button id="importBtn">Importar JSON</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Modo edição ativo — clique em qualquer célula da tabela para digitar (na OBSERVAÇÃO, é duplo-clique). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação automática, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno (não editáveis). As alterações salvam automaticamente neste navegador.</span>
+  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno.</span>
 </div>
 
 <div class="table-wrap">
+
   <div class="quadro-title" id="quadroTitle">QUADRO MQB</div>
   <table id="mainTable">
     <colgroup>
@@ -451,7 +456,6 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbyTT3VSsu5uj3f
 const storedSyncPref = localStorage.getItem(SYNC_URL_KEY);
 let syncUrl = (storedSyncPref === null) ? DEFAULT_SYNC_URL : (storedSyncPref === 'OFF' ? '' : storedSyncPref);
 let pollTimer = null;
-const rowSyncTimers = {};
 
 function setSyncStatus(st){
   const dot = document.getElementById('syncDot');
@@ -468,64 +472,58 @@ function setSyncStatus(st){
 function doSyncGet(action, params){
   if(!syncUrl) return Promise.resolve(null);
   const qs = new URLSearchParams(Object.assign({action}, params||{})).toString();
-  setSyncStatus('syncing');
   return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET'})
     .then(r=>r.json())
-    .then(j=>{ setSyncStatus(j && j.ok ? 'ok' : 'error'); return j; })
-    .catch(err=>{ console.warn('Falha de sincronização:', err); setSyncStatus('error'); return null; });
+    .catch(err=>{ console.warn('Falha de sincronização:', err); return null; });
 }
 
-function syncSaveRowDebounced(area, row){
-  if(!syncUrl || !area || !row) return;
-  const key = area.name+'|'+row.pn+'|'+row.celula;
-  clearTimeout(rowSyncTimers[key]);
-  rowSyncTimers[key] = setTimeout(()=>{
-    doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) });
-  }, 450);
-}
-function syncDeleteRow(area, pn, celula){
-  if(!syncUrl || !area) return;
-  doSyncGet('deleteRow', { area: area.name, pn, celula });
-}
-// se P.N e CÉLULA forem editados quase juntos (caso comum ao renomear uma linha nova),
-// agrupa as duas mudanças numa única troca (apaga o registro antigo, grava o novo),
-// em vez de disparar duas operações concorrentes que podem se atropelar na planilha.
-const identityPending = new WeakMap();
-function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
-  if(!syncUrl || !area) return;
-  let rec = identityPending.get(row);
-  if(!rec){
-    rec = { oldPn, oldCelula };
-    identityPending.set(row, rec);
-  }
-  clearTimeout(rec.timer);
-  rec.timer = setTimeout(()=>{
-    const finalOldPn = rec.oldPn, finalOldCelula = rec.oldCelula;
-    identityPending.delete(row);
-    if(finalOldPn===newPn && finalOldCelula===newCelula){
-      doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
-      return;
+/* Envio manual e completo pro Google Sheets — acionado só pelo botão "💾 Salvar no Sheets".
+   Reescreve a planilha inteira do zero a partir do que está na tela agora, em sequência
+   (uma requisição de cada vez, nunca em paralelo), evitando qualquer corrida/duplicação. */
+let savingNow = false;
+async function saveAllToSheet(){
+  if(!syncUrl){ alert('Sincronização não está configurada. Clique no ⚙ primeiro.'); return; }
+  if(savingNow) return;
+  savingNow = true;
+
+  const btn = document.getElementById('saveSheetBtn');
+  const originalLabel = btn ? btn.textContent : '';
+  const totalRows = countCells(state.areas);
+  let done = 0;
+  const setProgress = (msg)=>{ if(btn) btn.textContent = msg; };
+
+  try{
+    setSyncStatus('syncing');
+    setProgress('💾 Limpando planilha...');
+    const clearRes = await doSyncGet('clearAll', {});
+    if(!clearRes || !clearRes.ok){
+      throw new Error((clearRes && clearRes.error) || 'falha ao limpar a planilha');
     }
-    doSyncGet('deleteRow', { area: area.name, pn: finalOldPn, celula: finalOldCelula }).then(()=>{
-      doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
-    });
-  }, 550);
-}
-function syncAddArea(area){
-  if(!syncUrl) return;
-  doSyncGet('addArea', { name: area.name, quadro: area.quadro, ativo: (area.active!==false)?'SIM':'NAO' });
-}
-function syncSetAreaMeta(area){
-  if(!syncUrl) return;
-  doSyncGet('setAreaMeta', { name: area.name, quadro: area.quadro, ativo: (area.active!==false)?'SIM':'NAO' });
-}
-function syncRenameArea(oldName, newName){
-  if(!syncUrl) return;
-  doSyncGet('renameArea', { oldName, newName });
-}
-function syncDeleteArea(name){
-  if(!syncUrl) return;
-  doSyncGet('deleteArea', { name });
+
+    for(const area of state.areas){
+      setProgress('💾 Salvando área "'+area.name+'"...');
+      const areaRes = await doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' });
+      if(!areaRes || !areaRes.ok) throw new Error('falha ao salvar área "'+area.name+'"');
+
+      for(const row of (area.celulas||[])){
+        done++;
+        setProgress('💾 Salvando '+done+'/'+totalRows+'...');
+        const rowRes = await doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) });
+        if(!rowRes || !rowRes.ok) throw new Error('falha ao salvar "'+(row.celula||row.pn)+'" em "'+area.name+'"');
+      }
+    }
+
+    setSyncStatus('ok');
+    setProgress(originalLabel);
+    dirty = false;
+    alert('✅ Salvo no Google Sheets: '+state.areas.length+' área(s), '+totalRows+' célula(s).');
+  }catch(err){
+    setSyncStatus('error');
+    setProgress(originalLabel);
+    alert('⚠️ Falha ao salvar no Sheets: '+err.message+'\n\nSeus dados continuam salvos neste navegador — pode tentar salvar de novo.');
+  }finally{
+    savingNow = false;
+  }
 }
 
 function countCells(areasList){
@@ -533,8 +531,9 @@ function countCells(areasList){
 }
 let firstLoadDone = false;
 function loadFromSheet(){
+  setSyncStatus('syncing');
   return doSyncGet('load', {}).then(j=>{
-    if(!(j && j.ok && Array.isArray(j.areas))) return;
+    if(!(j && j.ok && Array.isArray(j.areas))){ setSyncStatus('error'); return; }
 
     const newCount = countCells(j.areas);
     const curCount = countCells(state.areas);
@@ -557,6 +556,7 @@ function loadFromSheet(){
       ensureVisibleCurrent();
       render();
     }
+    setSyncStatus('ok');
   });
 }
 function isTypingNow(){
@@ -677,9 +677,8 @@ function render(){
       chk.addEventListener('click', (e)=>{
         e.stopPropagation();
         a.active = chk.checked;
-        saveData();
+        saveData(); markDirty();
         render();
-        syncSetAreaMeta(a,{ativo:true});
       });
       d.appendChild(chk);
     }
@@ -695,9 +694,8 @@ function render(){
         const oldName = label.dataset.before!==undefined ? label.dataset.before : a.name;
         const newName = label.textContent.trim() || a.name;
         a.name = newName;
-        saveData(); 
+        saveData(); markDirty();
         document.getElementById('areaNameLabel').innerHTML = (state.areas[state.current].name||"ÁREA") + '<span>Área atual</span>';
-        if(newName!==oldName) syncRenameArea(oldName, newName);
       });
       label.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); label.blur(); } });
     }
@@ -711,10 +709,9 @@ function render(){
         if(state.areas.length<=1){ alert("Precisa manter ao menos 1 área."); return; }
         if(!confirm('Excluir a área "'+(a.name||'')+'"?')) return;
         state.areas.splice(i,1);
-        saveData();
+        saveData(); markDirty();
         ensureVisibleCurrent();
         render();
-        syncDeleteArea(a.name);
       });
       d.appendChild(del);
     }
@@ -731,9 +728,8 @@ function render(){
     addDot.addEventListener('click', ()=>{
       const newArea = {name:'NOVA ÁREA', quadro:'QUADRO', active:true, celulas:[]};
       state.areas.push(newArea);
-      saveData();
+      saveData(); markDirty();
       goTo(state.areas.length-1);
-      syncAddArea(newArea);
     });
     dotsEl.appendChild(addDot);
   }
@@ -790,22 +786,20 @@ function render(){
   filteredRows.forEach((row)=>{
     const tr = document.createElement('tr');
 
-    tr.appendChild(editableCell(row.pn, (v,old)=>{
-      row.pn=v; saveData();
-      if(v!==old) syncRowIdentityChange(area, old, row.celula, v, row.celula, row);
+    tr.appendChild(editableCell(row.pn, (v)=>{
+      row.pn=v; saveData(); markDirty();
     }, 'pn'));
-    tr.appendChild(editableCell(row.celula, (v,old)=>{
-      row.celula=v; saveData();
-      if(v!==old) syncRowIdentityChange(area, row.pn, old, row.pn, v, row);
+    tr.appendChild(editableCell(row.celula, (v)=>{
+      row.celula=v; saveData(); markDirty();
     }, 'celula'));
 
     visibleTurnos.forEach(t=>{
       const to = row.turnos[t] || (row.turnos[t]=blankTurno());
-      tr.appendChild(editableCell(to.projeto, v=>{to.projeto=v; saveData(); syncSaveRowDebounced(area,row);}, 'projeto'));
-      tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); syncSaveRowDebounced(area,row);}, 'lote'));
+      tr.appendChild(editableCell(to.projeto, v=>{to.projeto=v; saveData(); markDirty();}, 'projeto'));
+      tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); markDirty();}, 'lote'));
       tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].inicio));
       tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].final));
-      tr.appendChild(obsCell(to, ()=>syncSaveRowDebounced(area,row)));
+      tr.appendChild(obsCell(to));
     });
 
     if(adminOpen){
@@ -817,8 +811,7 @@ function render(){
         if(!confirm('Excluir a linha "'+(row.celula||row.pn)+'"?')) return;
         const idx = allRows.indexOf(row);
         if(idx>-1) allRows.splice(idx,1);
-        saveData(); render();
-        syncDeleteRow(area, row.pn, row.celula);
+        saveData(); markDirty(); render();
       };
       tdA.appendChild(btn);
       tr.appendChild(tdA);
@@ -878,7 +871,7 @@ function obsCell(to, onSync){
     const order = ['','azul','roxo','vermelho'];
     const idx = order.indexOf(to.rack||'');
     to.rack = order[(idx+1)%order.length];
-    saveData(); render();
+    saveData(); markDirty(); render();
     if(onSync) onSync();
   });
 
@@ -893,7 +886,7 @@ function obsCell(to, onSync){
       if(td.getAttribute('contenteditable')==='true'){
         to.obs = td.textContent.trim();
         td.setAttribute('contenteditable','false');
-        saveData();
+        saveData(); markDirty();
         if(onSync) onSync();
       }
     });
@@ -904,12 +897,20 @@ function obsCell(to, onSync){
 
 /* ============ ADMIN MODE ============ */
 let adminOpen = false;
+let dirty = false; // true quando há alterações locais ainda não enviadas ao Sheets
+function markDirty(){ dirty = true; }
 function refreshAdminRowState(){
   document.querySelectorAll('#tbody td:not(.row-actions)').forEach(td=>{
     td.setAttribute('contenteditable', adminOpen ? 'true':'false');
   });
 }
 document.getElementById('adminToggle').addEventListener('click', ()=>{
+  if(adminOpen && dirty && syncUrl){
+    const wantsSave = confirm('Você tem alterações que ainda não foram enviadas ao Google Sheets.\n\nSalvar agora antes de sair do modo edição?\n\n(Se clicar em Cancelar, as alterações continuam salvas neste navegador, mas outros dispositivos só vão ver quando você clicar em "💾 Salvar no Sheets".)');
+    if(wantsSave){
+      saveAllToSheet();
+    }
+  }
   adminOpen = !adminOpen;
   document.getElementById('adminBar').classList.toggle('open', adminOpen);
   if(adminOpen){
@@ -924,13 +925,16 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
   const area = state.areas[state.current];
   const newRow = {pn:"NOVO P.N", celula:"NOVA CÉLULA", turnos: blankTurnos()};
   area.celulas.push(newRow);
-  saveData(); render();
-  syncSaveRowDebounced(area, newRow, true);
+  saveData(); markDirty(); render();
   // foca a célula recém-criada para edição imediata
   requestAnimationFrame(()=>{
     const cells = document.querySelectorAll('#tbody tr:last-child td.pn');
     if(cells.length){ const el = cells[cells.length-1]; el.focus(); document.execCommand && window.getSelection().selectAllChildren(el); }
   });
+});
+document.getElementById('saveSheetBtn').addEventListener('click', ()=>{
+  if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
+  saveAllToSheet();
 });
 document.getElementById('exportBtn').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(state.areas,null,2)],{type:'application/json'});
@@ -947,7 +951,7 @@ document.getElementById('importBtn').addEventListener('click', ()=>{
       try{
         const data = JSON.parse(reader.result);
         if(!Array.isArray(data)) throw new Error("formato inválido");
-        state.areas = normalizeAreas(data); state.current=0; saveData(); render();
+        state.areas = normalizeAreas(data); state.current=0; saveData(); markDirty(); render();
       }catch(e){ alert("Arquivo inválido: "+e.message); }
     };
     reader.readAsText(file);
@@ -1061,6 +1065,7 @@ function importExcelFile(file){
       if(newAreas.length===0){ alert('Nenhuma área/dado válido encontrado na planilha. Confira as colunas "Área", "P.N", "Célula" e "Turno".'); return; }
       if(!confirm('Importar '+newAreas.length+' área(s) e substituir TODOS os dados atuais do painel?')) return;
       state.areas = normalizeAreas(newAreas);
+      markDirty();
       state.current = 0;
       saveData();
       ensureVisibleCurrent();
@@ -1145,6 +1150,13 @@ function tickClock(){
   document.getElementById('clockDate').textContent = now.toLocaleDateString('pt-BR');
 }
 tickClock(); setInterval(tickClock,1000);
+
+window.addEventListener('beforeunload', (e)=>{
+  if(dirty && syncUrl){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 /* ============ INIT ============ */
 render();
