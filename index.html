@@ -629,10 +629,10 @@ function render(){
   const area = state.areas[state.current];
   if(!area){ return; }
   document.getElementById('areaNameLabel').innerHTML = (area.name||"ÁREA") + '<span>Área atual</span>';
-  document.getElementById('quadroTitle').textContent = area.quadro || "QUADRO";
   const qEl = document.getElementById('quadroTitle');
-  qEl.setAttribute('contenteditable', adminOpen ? 'true':'false');
-  qEl.onblur = adminOpen ? ()=>{ area.quadro = qEl.textContent.trim()||area.quadro; saveData(); syncSetAreaMeta(area,{quadro:true}); } : null;
+  qEl.textContent = 'QUADRO ' + (area.name || 'ÁREA');
+  qEl.setAttribute('contenteditable','false');
+  qEl.onblur = null;
 
   // dots
   const dotsEl = document.getElementById('dots');
