@@ -252,6 +252,7 @@
 <div class="admin-bar" id="adminBar">
   <button id="addRowBtn">+ Célula</button>
   <button id="saveSheetBtn" class="save-sheet-btn">💾 Salvar no Sheets</button>
+  <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
   <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno.</span>
@@ -541,7 +542,7 @@ function countCells(areasList){
 }
 let firstLoadDone = false;
 let lastKnownSheetCellCount = null; // maior nº de células já visto vindo da planilha (referência p/ detectar salvamentos suspeitos)
-function loadFromSheet(){
+function loadFromSheet(force){
   setSyncStatus('syncing');
   return doSyncGet('load', {}).then(j=>{
     if(!(j && j.ok && Array.isArray(j.areas))){ setSyncStatus('error'); return; }
@@ -549,10 +550,11 @@ function loadFromSheet(){
     const newCount = countCells(j.areas);
     const curCount = countCells(state.areas);
 
-    // trava de segurança: nunca deixa uma resposta vazia/reduzida da planilha
-    // apagar dados locais já existentes (protege contra falha temporária no Sheets)
-    if(firstLoadDone && curCount>0 && newCount===0){
-      console.warn('Sincronização retornou vazia — mantendo os dados locais para não perder nada. Confira a planilha/Apps Script.');
+    // trava de segurança: nunca deixa uma resposta vazia/muito reduzida da planilha
+    // apagar dados locais já existentes automaticamente (protege contra falha ou
+    // dado ruim gravado na planilha por engano). "force" (usado no botão ⚙) ignora isso.
+    if(!force && firstLoadDone && curCount>0 && (newCount===0 || newCount < curCount*0.6)){
+      console.warn('Sincronização retornou bem menos células do que o painel já tinha ('+newCount+' vs '+curCount+') — mantendo os dados locais para não perder nada.');
       setSyncStatus('error');
       return;
     }
@@ -961,6 +963,11 @@ document.getElementById('saveSheetBtn').addEventListener('click', ()=>{
 
   if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\n'+totalAreas+' área(s), '+totalCells+' célula(s).\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
   saveAllToSheet();
+});
+document.getElementById('reloadSheetBtn').addEventListener('click', ()=>{
+  if(!syncUrl){ alert('Sincronização não está configurada.'); return; }
+  if(!confirm('Substituir o que está na tela pelo conteúdo ATUAL da planilha Google Sheets?\n\nIsso descarta qualquer alteração local não salva.')) return;
+  loadFromSheet(true);
 });
 /* ============ EXCEL (SheetJS) ============ */
 function exportExcel(){
