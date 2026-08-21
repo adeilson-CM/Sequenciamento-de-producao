@@ -492,23 +492,34 @@ async function saveAllToSheet(){
 
   try{
     setSyncStatus('syncing');
-    setProgress('💾 Limpando planilha...');
-    const clearRes = await doSyncGet('clearAll', {});
-    if(!clearRes || !clearRes.ok){
-      throw new Error((clearRes && clearRes.error) || 'falha ao limpar a planilha');
+
+    // 1) prepara um rascunho zerado — a planilha "ao vivo" continua intacta até o commit final,
+    //    então quem estiver lendo (TV/outro dispositivo) nunca vê um estado pela metade
+    setProgress('💾 Preparando...');
+    const prepRes = await doSyncGet('prepareStaging', {});
+    if(!prepRes || !prepRes.ok){
+      throw new Error((prepRes && prepRes.error) || 'falha ao preparar o envio');
     }
 
+    // 2) manda tudo pro rascunho, um de cada vez
     for(const area of state.areas){
       setProgress('💾 Salvando área "'+area.name+'"...');
-      const areaRes = await doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' });
+      const areaRes = await doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO', staging:'1' });
       if(!areaRes || !areaRes.ok) throw new Error('falha ao salvar área "'+area.name+'"');
 
       for(const row of (area.celulas||[])){
         done++;
         setProgress('💾 Salvando '+done+'/'+totalRows+'...');
-        const rowRes = await doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) });
+        const rowRes = await doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos), staging:'1' });
         if(!rowRes || !rowRes.ok) throw new Error('falha ao salvar "'+(row.celula||row.pn)+'" em "'+area.name+'"');
       }
+    }
+
+    // 3) troca o rascunho pelo "ao vivo" de uma vez só — única etapa que os outros dispositivos percebem
+    setProgress('💾 Publicando...');
+    const commitRes = await doSyncGet('commitStaging', {});
+    if(!commitRes || !commitRes.ok){
+      throw new Error((commitRes && commitRes.error) || 'falha ao publicar os dados');
     }
 
     setSyncStatus('ok');
@@ -518,7 +529,7 @@ async function saveAllToSheet(){
   }catch(err){
     setSyncStatus('error');
     setProgress(originalLabel);
-    alert('⚠️ Falha ao salvar no Sheets: '+err.message+'\n\nSeus dados continuam salvos neste navegador — pode tentar salvar de novo.');
+    alert('⚠️ Falha ao salvar no Sheets: '+err.message+'\n\nA planilha "ao vivo" não foi alterada (só o rascunho ficou incompleto) — seus dados continuam salvos neste navegador. Pode tentar salvar de novo.');
   }finally{
     savingNow = false;
   }
