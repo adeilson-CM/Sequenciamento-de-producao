@@ -525,6 +525,7 @@ async function saveAllToSheet(){
     setSyncStatus('ok');
     setProgress(originalLabel);
     dirty = false;
+    lastKnownSheetCellCount = totalRows;
     alert('✅ Salvo no Google Sheets: '+state.areas.length+' área(s), '+totalRows+' célula(s).');
   }catch(err){
     setSyncStatus('error');
@@ -539,6 +540,7 @@ function countCells(areasList){
   return (areasList||[]).reduce((n,a)=> n + ((a.celulas||[]).length), 0);
 }
 let firstLoadDone = false;
+let lastKnownSheetCellCount = null; // maior nº de células já visto vindo da planilha (referência p/ detectar salvamentos suspeitos)
 function loadFromSheet(){
   setSyncStatus('syncing');
   return doSyncGet('load', {}).then(j=>{
@@ -555,6 +557,9 @@ function loadFromSheet(){
       return;
     }
     firstLoadDone = true;
+    if(lastKnownSheetCellCount===null || newCount > lastKnownSheetCellCount){
+      lastKnownSheetCellCount = newCount;
+    }
 
     if(j.areas.length){
       j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
@@ -915,10 +920,7 @@ function refreshAdminRowState(){
 }
 document.getElementById('adminToggle').addEventListener('click', ()=>{
   if(adminOpen && dirty && syncUrl){
-    const wantsSave = confirm('Você tem alterações que ainda não foram enviadas ao Google Sheets.\n\nSalvar agora antes de sair do modo edição?\n\n(Se clicar em Cancelar, as alterações continuam salvas neste navegador, mas outros dispositivos só vão ver quando você clicar em "💾 Salvar no Sheets".)');
-    if(wantsSave){
-      saveAllToSheet();
-    }
+    alert('Você tem alterações que ainda não foram enviadas ao Google Sheets.\n\nQuando quiser, clique em "💾 Salvar no Sheets" (na barra de edição) pra publicar. Isso NUNCA acontece sozinho — só quando você clicar nesse botão.');
   }
   adminOpen = !adminOpen;
   document.getElementById('adminBar').classList.toggle('open', adminOpen);
@@ -942,7 +944,22 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
   });
 });
 document.getElementById('saveSheetBtn').addEventListener('click', ()=>{
-  if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
+  const totalAreas = state.areas.length;
+  const totalCells = countCells(state.areas);
+
+  // trava de segurança: se o que está na tela é bem menor do que a planilha já teve
+  // (ex: navegador com cópia local desatualizada), bloqueia e avisa em vez de sobrescrever
+  if(lastKnownSheetCellCount!==null && lastKnownSheetCellCount>0 && totalCells < lastKnownSheetCellCount*0.6){
+    alert(
+      '⚠️ Salvamento bloqueado por segurança.\n\n'+
+      'Esta tela só tem '+totalCells+' célula(s) no total, mas a planilha já chegou a ter '+lastKnownSheetCellCount+'.\n\n'+
+      'Isso pode indicar que este navegador está com uma cópia desatualizada/incompleta — salvar agora apagaria dados reais da planilha.\n\n'+
+      'Recarregue a página (Ctrl+Shift+R) pra buscar os dados atuais da planilha antes de tentar salvar de novo. Se isso for intencional (ex: você excluiu várias áreas de propósito), me avise.'
+    );
+    return;
+  }
+
+  if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\n'+totalAreas+' área(s), '+totalCells+' célula(s).\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
   saveAllToSheet();
 });
 /* ============ EXCEL (SheetJS) ============ */
