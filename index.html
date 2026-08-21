@@ -797,7 +797,7 @@ function renderInner(){
     const th = document.createElement('th');
     th.className='grp'; th.colSpan=5; th.textContent = TURNO_LABELS[t];
     grpRow.appendChild(th);
-    ['PROJETO','LOTE','INÍCIO','FINAL','OBSERVAÇÃO'].forEach(lbl=>{
+    ['CLIENTE','LOTE','INÍCIO','FINAL','OBSERVAÇÃO'].forEach(lbl=>{
       const sub = document.createElement('th');
       sub.className = 'sub'+(lbl==='LOTE'?' lote':'');
       sub.textContent = lbl;
@@ -820,7 +820,7 @@ function renderInner(){
   const celulaPct = budget * 0.10;
   const turnosBudget = budget - pnPct - celulaPct;
   const perTurno = turnosBudget / n;
-  const wProjeto = perTurno*0.14, wLote = perTurno*0.13, wInicio = perTurno*0.13, wFinal = perTurno*0.13, wObs = perTurno*0.47;
+  const wProjeto = perTurno*0.17, wLote = perTurno*0.15, wInicio = perTurno*0.16, wFinal = perTurno*0.16, wObs = perTurno*0.36;
 
   colgroup.innerHTML = `<col style="width:${pnPct}%"><col style="width:${celulaPct}%">`;
   visibleTurnos.forEach(()=>{
@@ -1021,7 +1021,7 @@ function exportExcel(){
           'P.N': row.pn || '',
           'Célula': row.celula || '',
           'Turno': t,
-          'Projeto': to.projeto || '',
+          'Cliente': to.projeto || '',
           'Lote': to.lote || '',
           'Rack (azul/roxo/vermelho/vazio)': to.rack || '',
           'Início': to.inicio || '',
@@ -1035,7 +1035,7 @@ function exportExcel(){
         return to.projeto || to.lote || to.inicio || to.final || to.obs || to.rack;
       });
       if(!temAlgum){
-        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Projeto':'','Lote':'','Rack (azul/roxo/vermelho/vazio)':'','Início':'','Final':'','Observação':''});
+        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Cliente':'','Lote':'','Rack (azul/roxo/vermelho/vazio)':'','Início':'','Final':'','Observação':''});
       }
     });
   });
@@ -1097,7 +1097,7 @@ function importExcelFile(file){
         if(!TURNOS.includes(turno)) return; // linha de referência sem turno preenchido
         const rackVal = String(r['Rack (azul/roxo/vermelho/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
         rowObj.turnos[turno] = {
-          projeto: String(r['Projeto']||''),
+          projeto: String(r['Cliente'] ?? r['Projeto'] ?? ''),
           lote: String(r['Lote']||''),
           rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho') ? rackVal : '',
           inicio: String(r['Início']||''),
