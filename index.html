@@ -252,8 +252,6 @@
 <div class="admin-bar" id="adminBar">
   <button id="addRowBtn">+ Célula</button>
   <button id="saveSheetBtn" class="save-sheet-btn">💾 Salvar no Sheets</button>
-  <button id="exportBtn">Exportar JSON</button>
-  <button id="importBtn">Importar JSON</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
   <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno.</span>
@@ -452,7 +450,7 @@ state.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
 
 /* ============ SINCRONIZAÇÃO COM GOOGLE SHEETS ============ */
 const SYNC_URL_KEY = 'gestamp_seq_sync_url';
-const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbyTT3VSsu5uj3f6qAc1Ch7bpMCFCbWEKQl-AS_tpXwdMujI0zwmQMr-WGuBxYX9WGQt/exec';
+const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbxlDU9Za3L13HFC-pGQS4sl-4qn-Ot8ksjY960ah3FmfWUjMN90vD8Q4dn1Cef3fpD-/exec';
 const storedSyncPref = localStorage.getItem(SYNC_URL_KEY);
 let syncUrl = (storedSyncPref === null) ? DEFAULT_SYNC_URL : (storedSyncPref === 'OFF' ? '' : storedSyncPref);
 let pollTimer = null;
@@ -936,29 +934,6 @@ document.getElementById('saveSheetBtn').addEventListener('click', ()=>{
   if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
   saveAllToSheet();
 });
-document.getElementById('exportBtn').addEventListener('click', ()=>{
-  const blob = new Blob([JSON.stringify(state.areas,null,2)],{type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='sequenciamento_producao.json'; a.click();
-  URL.revokeObjectURL(url);
-});
-document.getElementById('importBtn').addEventListener('click', ()=>{
-  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
-  inp.onchange = ()=>{
-    const file = inp.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      try{
-        const data = JSON.parse(reader.result);
-        if(!Array.isArray(data)) throw new Error("formato inválido");
-        state.areas = normalizeAreas(data); state.current=0; saveData(); markDirty(); render();
-      }catch(e){ alert("Arquivo inválido: "+e.message); }
-    };
-    reader.readAsText(file);
-  };
-  inp.click();
-});
-
 /* ============ EXCEL (SheetJS) ============ */
 function exportExcel(){
   if(typeof XLSX === 'undefined'){ alert('Biblioteca de Excel não carregou (verifique a internet). Tente novamente.'); return; }
