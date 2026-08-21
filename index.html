@@ -316,6 +316,10 @@ function normalizeAreas(list){
         row.turnos[t].inicio = h.inicio;
         row.turnos[t].final = h.final;
       });
+      // CLIENTE agora é único por célula (só aparece/edita no 1º turno) — unifica
+      // eventuais valores divergentes usando o do 1T (ou o primeiro preenchido) como referência
+      const cliente = row.turnos['1T'].projeto || TURNOS.map(t=>row.turnos[t].projeto).find(v=>v) || '';
+      TURNOS.forEach(t=>{ row.turnos[t].projeto = cliente; });
     });
   });
   return list;
@@ -788,18 +792,28 @@ function renderInner(){
   renderTurnoToggles();
   const visibleTurnos = activeTurnos();
 
+  // CLIENTE só aparece no primeiro turno visível; os demais turnos ficam sem essa coluna
+  // (o valor continua o mesmo por baixo dos panos — editar no primeiro replica pros outros)
+  const COL_W = {cliente:1.2, lote:1.05, inicio:1.1, final:1.1, obs:2.6};
+  function turnoCols(isFirst){
+    return isFirst
+      ? [['cliente','CLIENTE',COL_W.cliente],['lote','LOTE',COL_W.lote],['inicio','INÍCIO',COL_W.inicio],['final','FINAL',COL_W.final],['obs','OBSERVAÇÃO',COL_W.obs]]
+      : [['lote','LOTE',COL_W.lote],['inicio','INÍCIO',COL_W.inicio],['final','FINAL',COL_W.final],['obs','OBSERVAÇÃO',COL_W.obs]];
+  }
+
   // header rows
   const grpRow = document.getElementById('grpRow');
   const subRow = document.getElementById('subRow');
   grpRow.innerHTML = '<th class="pn-head" rowspan="2">P.N</th><th class="celula-head" rowspan="2">CÉLULA</th>';
   subRow.innerHTML = '';
-  visibleTurnos.forEach(t=>{
+  visibleTurnos.forEach((t,idx)=>{
+    const cols = turnoCols(idx===0);
     const th = document.createElement('th');
-    th.className='grp'; th.colSpan=5; th.textContent = TURNO_LABELS[t];
+    th.className='grp'; th.colSpan=cols.length; th.textContent = TURNO_LABELS[t];
     grpRow.appendChild(th);
-    ['CLIENTE','LOTE','INÍCIO','FINAL','OBSERVAÇÃO'].forEach(lbl=>{
+    cols.forEach(([key,lbl])=>{
       const sub = document.createElement('th');
-      sub.className = 'sub'+(lbl==='LOTE'?' lote':'');
+      sub.className = 'sub'+(key==='lote'?' lote':'');
       sub.textContent = lbl;
       subRow.appendChild(sub);
     });
@@ -813,18 +827,21 @@ function renderInner(){
   // colgroup (rebuild turno cols) — larguras em % que sempre somam 100%, sem scroll horizontal
   const table = document.getElementById('mainTable');
   let colgroup = table.querySelector('colgroup');
-  const n = visibleTurnos.length;
   const actionsPct = adminOpen ? 3.2 : 0;
   const budget = 100 - actionsPct;
   const pnPct = budget * 0.055;
   const celulaPct = budget * 0.10;
   const turnosBudget = budget - pnPct - celulaPct;
-  const perTurno = turnosBudget / n;
-  const wProjeto = perTurno*0.17, wLote = perTurno*0.15, wInicio = perTurno*0.16, wFinal = perTurno*0.16, wObs = perTurno*0.36;
+
+  let totalWeight = 0;
+  visibleTurnos.forEach((t,idx)=> turnoCols(idx===0).forEach(([,,w])=> totalWeight+=w));
+  const unit = totalWeight>0 ? turnosBudget/totalWeight : 0;
 
   colgroup.innerHTML = `<col style="width:${pnPct}%"><col style="width:${celulaPct}%">`;
-  visibleTurnos.forEach(()=>{
-    colgroup.innerHTML += `<col style="width:${wProjeto}%"><col style="width:${wLote}%"><col style="width:${wInicio}%"><col style="width:${wFinal}%"><col style="width:${wObs}%">`;
+  visibleTurnos.forEach((t,idx)=>{
+    turnoCols(idx===0).forEach(([,,w])=>{
+      colgroup.innerHTML += `<col style="width:${w*unit}%">`;
+    });
   });
   if(adminOpen) colgroup.innerHTML += `<col style="width:${actionsPct}%">`;
 
@@ -844,9 +861,15 @@ function renderInner(){
       row.celula=v; saveData(); markDirty();
     }, 'celula'));
 
-    visibleTurnos.forEach(t=>{
+    visibleTurnos.forEach((t,idx)=>{
       const to = row.turnos[t] || (row.turnos[t]=blankTurno());
-      tr.appendChild(editableCell(to.projeto, v=>{to.projeto=v; saveData(); markDirty();}, 'projeto'));
+      if(idx===0){
+        tr.appendChild(editableCell(to.projeto, v=>{
+          to.projeto=v; saveData(); markDirty();
+          // replica o cliente pros outros turnos da mesma célula (não editáveis lá, mas mantém o dado consistente)
+          TURNOS.forEach(tt=>{ if(row.turnos[tt]) row.turnos[tt].projeto = v; });
+        }, 'projeto'));
+      }
       tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); markDirty();}, 'lote'));
       tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].inicio));
       tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].final));
