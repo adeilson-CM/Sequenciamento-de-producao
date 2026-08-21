@@ -213,6 +213,25 @@
 </head>
 <body>
 
+<div id="errorBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;padding:10px 16px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:40vh;overflow-y:auto;box-shadow:0 2px 8px rgba(0,0,0,.4);"></div>
+<script>
+  function showErrorBanner(msg){
+    try{
+      const el = document.getElementById('errorBanner');
+      const time = new Date().toLocaleTimeString('pt-BR');
+      el.textContent = '⚠️ ERRO NO PAINEL ['+time+'] — tire um print desta faixa e mande pro suporte:\n\n' + msg;
+      el.style.display = 'block';
+    }catch(e){ /* nunca deixa o handler de erro quebrar a página */ }
+  }
+  window.addEventListener('error', (e)=>{
+    showErrorBanner((e.message||'erro desconhecido') + '\n' + (e.filename||'') + ':' + (e.lineno||'') );
+  });
+  window.addEventListener('unhandledrejection', (e)=>{
+    const reason = e.reason;
+    showErrorBanner('Promise rejeitada: ' + (reason && reason.stack ? reason.stack : String(reason)));
+  });
+</script>
+
 <div class="topbar">
   <div class="brand-left">
     <div class="gestamp-badge"><span>G</span></div>
@@ -545,34 +564,43 @@ let lastKnownSheetCellCount = null; // maior nº de células já visto vindo da 
 function loadFromSheet(force){
   setSyncStatus('syncing');
   return doSyncGet('load', {}).then(j=>{
-    if(!(j && j.ok && Array.isArray(j.areas))){ setSyncStatus('error'); return; }
+    try{
+      if(!(j && j.ok && Array.isArray(j.areas))){
+        setSyncStatus('error');
+        if(j && j.ok===false){ showErrorBanner('Resposta da planilha veio com erro: ' + (j.error||'desconhecido')); }
+        return;
+      }
 
-    const newCount = countCells(j.areas);
-    const curCount = countCells(state.areas);
+      const newCount = countCells(j.areas);
+      const curCount = countCells(state.areas);
 
-    // trava de segurança: nunca deixa uma resposta vazia/muito reduzida da planilha
-    // apagar dados locais já existentes automaticamente (protege contra falha ou
-    // dado ruim gravado na planilha por engano). "force" (usado no botão ⚙) ignora isso.
-    if(!force && firstLoadDone && curCount>0 && (newCount===0 || newCount < curCount*0.6)){
-      console.warn('Sincronização retornou bem menos células do que o painel já tinha ('+newCount+' vs '+curCount+') — mantendo os dados locais para não perder nada.');
+      // trava de segurança: nunca deixa uma resposta vazia/muito reduzida da planilha
+      // apagar dados locais já existentes automaticamente (protege contra falha ou
+      // dado ruim gravado na planilha por engano). "force" (usado no botão ⚙) ignora isso.
+      if(!force && firstLoadDone && curCount>0 && (newCount===0 || newCount < curCount*0.6)){
+        console.warn('Sincronização retornou bem menos células do que o painel já tinha ('+newCount+' vs '+curCount+') — mantendo os dados locais para não perder nada.');
+        setSyncStatus('error');
+        return;
+      }
+      firstLoadDone = true;
+      if(lastKnownSheetCellCount===null || newCount > lastKnownSheetCellCount){
+        lastKnownSheetCellCount = newCount;
+      }
+
+      if(j.areas.length){
+        j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
+        normalizeAreas(j.areas);
+        state.areas = j.areas;
+        if(state.current >= state.areas.length) state.current = 0;
+        saveData();
+        ensureVisibleCurrent();
+        render();
+      }
+      setSyncStatus('ok');
+    }catch(err){
       setSyncStatus('error');
-      return;
+      showErrorBanner('Falha ao processar dados da planilha: ' + (err && err.stack ? err.stack : String(err)));
     }
-    firstLoadDone = true;
-    if(lastKnownSheetCellCount===null || newCount > lastKnownSheetCellCount){
-      lastKnownSheetCellCount = newCount;
-    }
-
-    if(j.areas.length){
-      j.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
-      normalizeAreas(j.areas);
-      state.areas = j.areas;
-      if(state.current >= state.areas.length) state.current = 0;
-      saveData();
-      ensureVisibleCurrent();
-      render();
-    }
-    setSyncStatus('ok');
   });
 }
 function isTypingNow(){
@@ -668,6 +696,13 @@ function renderTurnoToggles(){
 
 /* ============ RENDER ============ */
 function render(){
+  try{
+    renderInner();
+  }catch(err){
+    showErrorBanner('Falha ao desenhar a tela: ' + (err && err.stack ? err.stack : String(err)));
+  }
+}
+function renderInner(){
   const area = state.areas[state.current];
   if(!area){ return; }
   document.getElementById('areaNameLabel').innerHTML = (area.name||"ÁREA") + '<span>Área atual</span>';
