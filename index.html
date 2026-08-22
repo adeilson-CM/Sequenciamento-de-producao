@@ -187,6 +187,7 @@
   tbody td.obs.rack-azul{background:#2f6fd6 !important;color:#fff !important;font-weight:800;}
   tbody td.obs.rack-roxo{background:#7d3fc9 !important;color:#fff !important;font-weight:800;}
   tbody td.obs.rack-vermelho{background:#d6362f !important;color:#fff !important;font-weight:800;}
+  tbody td.obs.rack-verde{background:#2e9e4f !important;color:#fff !important;font-weight:800;}
   tbody td.obs{color:var(--red);font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;cursor:pointer;}
   tbody tr:nth-child(even) td.projeto,
   tbody tr:nth-child(even) td.lote{background:#f7fafd;}
@@ -241,8 +242,8 @@
   .filter-count{font-size:11.5px;color:#888;margin-left:auto;}
   .rack-hint{font-size:11px;color:#888;display:flex;align-items:center;gap:5px;}
   .rack-hint .rack-dot{
-    width:14px;height:11px;border-radius:3px;display:inline-block;
-    background:linear-gradient(90deg,#2f6fd6 33%,#7d3fc9 33%,#7d3fc9 66%,#d6362f 66%);border:1px solid #999;
+    width:16px;height:11px;border-radius:3px;display:inline-block;
+    background:linear-gradient(90deg,#2f6fd6 25%,#7d3fc9 25%,#7d3fc9 50%,#d6362f 50%,#d6362f 75%,#2e9e4f 75%);border:1px solid #999;
   }
   th.actions-head, td.row-actions{padding:2px;}
 
@@ -338,7 +339,7 @@
   <div class="turno-toggles" id="turnoToggles"></div>
   <label class="chk-obs"><input type="checkbox" id="onlyObsChk"> Só com observação</label>
   <button id="clearFiltersBtn">Limpar filtros</button>
-  <span class="rack-hint"><i class="rack-dot"></i>Clique na OBSERVAÇÃO p/ marcar rack azul/roxo/vermelho</span>
+  <span class="rack-hint"><i class="rack-dot"></i>Clique na OBSERVAÇÃO p/ marcar rack (azul/roxo/vermelho/verde=concluído)</span>
   <span class="filter-count" id="filterCount"></span>
 </div>
 
@@ -350,7 +351,7 @@
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
+  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho → verde. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
 </div>
 
 <div class="table-wrap">
@@ -1172,7 +1173,7 @@ function editableCell(value, onSave, cls){
   return td;
 }
 
-/* célula de OBSERVAÇÃO: clique alterna a cor do rack (branco → azul → roxo → vermelho);
+/* célula de OBSERVAÇÃO: clique alterna a cor do rack (branco → azul → roxo → vermelho → verde);
    no modo edição, duplo-clique permite digitar a observação */
 function obsCell(to, onSync){
   const td = document.createElement('td');
@@ -1182,13 +1183,13 @@ function obsCell(to, onSync){
   td.setAttribute('contenteditable','false');
   td.spellcheck = false;
   td.title = adminOpen
-    ? 'Clique: marcar rack (branco → azul → roxo → vermelho)  ·  Duplo-clique: editar observação'
-    : 'Clique: marcar rack (branco → azul → roxo → vermelho)';
+    ? 'Clique: marcar rack (branco → azul → roxo → vermelho → verde)  ·  Duplo-clique: editar observação'
+    : 'Clique: marcar rack (branco → azul → roxo → vermelho → verde)';
 
   td.addEventListener('click', ()=>{
     if(historyMode) return;
     if(td.getAttribute('contenteditable')==='true') return;
-    const order = ['','azul','roxo','vermelho'];
+    const order = ['','azul','roxo','vermelho','verde'];
     const idx = order.indexOf(to.rack||'');
     to.rack = order[(idx+1)%order.length];
     saveData(); markDirty(); render();
@@ -1310,7 +1311,7 @@ function exportExcel(){
           'Turno': t,
           'Cliente': to.projeto || '',
           'Lote': to.lote || '',
-          'Rack (azul/roxo/vermelho/vazio)': to.rack || '',
+          'Rack (azul/roxo/vermelho/verde/vazio)': to.rack || '',
           'Início': to.inicio || '',
           'Final': to.final || '',
           'Observação': to.obs || ''
@@ -1322,7 +1323,7 @@ function exportExcel(){
         return to.projeto || to.lote || to.inicio || to.final || to.obs || to.rack;
       });
       if(!temAlgum){
-        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Cliente':'','Lote':'','Rack (azul/roxo/vermelho/vazio)':'','Início':'','Final':'','Observação':''});
+        dataRows.push({'Área':area.name||'','Quadro':area.quadro||'','P.N':row.pn||'','Célula':row.celula||'','Turno':'','Cliente':'','Lote':'','Rack (azul/roxo/vermelho/verde/vazio)':'','Início':'','Final':'','Observação':''});
       }
     });
   });
@@ -1382,13 +1383,13 @@ function importExcelFile(file){
           areaMap[areaName].celulas.push(rowObj);
         }
         if(!TURNOS.includes(turno)) return; // linha de referência sem turno preenchido
-        const rackVal = String(r['Rack (azul/roxo/vermelho/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
+        const rackVal = String(r['Rack (azul/roxo/vermelho/verde/vazio)'] ?? r['Rack (azul/roxo/vermelho/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
         const inicioVal = String(r['Início']||'');
         const finalVal = String(r['Final']||'');
         rowObj.turnos[turno] = {
           projeto: String(r['Cliente'] ?? r['Projeto'] ?? ''),
           lote: String(r['Lote']||''),
-          rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho') ? rackVal : '',
+          rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho'||rackVal==='verde') ? rackVal : '',
           inicio: inicioVal,
           final: finalVal,
           obs: String(r['Observação']||''),
