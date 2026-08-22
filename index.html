@@ -131,6 +131,21 @@
   .modal-actions button{border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;}
   .modal-cancel{background:#eee;color:#444;}
   .modal-save{background:var(--blue-dark);color:#fff;}
+  .modal-list .hist-date-row{display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid #f2f2f2;}
+  .modal-list .hist-date-row:last-child{border-bottom:none;}
+  .modal-list .hist-date-row button{background:var(--blue-mid);color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+
+  .history-banner{
+    display:none;align-items:center;justify-content:space-between;gap:14px;
+    background:#5b2d91;color:#fff;padding:8px 20px;font-size:13px;font-weight:700;
+  }
+  .history-banner.show{display:flex;}
+  .history-banner button{
+    background:#fff;color:#5b2d91;border:none;border-radius:6px;padding:6px 14px;
+    font-size:12px;font-weight:800;cursor:pointer;
+  }
+
+  .admin-bar button.archive-btn{background:#5b2d91;}
   @keyframes syncpulse{0%{opacity:1;}50%{opacity:.35;}100%{opacity:1;}}
   .playpause{
     background:rgba(255,255,255,.12);border:none;color:#fff;
@@ -280,10 +295,27 @@
   <button class="playpause" id="playPauseBtn" title="Pausar/Retomar rotação">⏸</button>
   <button class="fullscreen-btn" id="fullscreenBtn" title="Tela cheia">⛶</button>
   <button class="fullscreen-btn" id="deviceFilterBtn" title="Escolher quais áreas aparecem NESTA tela">📺</button>
+  <button class="fullscreen-btn" id="historyBtn" title="Consultar histórico por data">📅</button>
   <span class="sync-dot sync-off" id="syncDot"></span>
   <button class="fullscreen-btn" id="syncConfigBtn" title="Configurar sincronização com Google Sheets">⚙</button>
 </div>
 <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+
+<div id="historyBanner" class="history-banner">
+  <span id="historyBannerText">📅 Visualizando histórico — somente leitura</span>
+  <button id="exitHistoryBtn">🔴 Voltar ao ao vivo</button>
+</div>
+
+<div class="modal-backdrop" id="historyModal">
+  <div class="modal-box">
+    <h3>📅 Histórico por data</h3>
+    <p class="modal-hint">Veja como estava o sequenciamento em um dia arquivado anteriormente (somente leitura). Pra criar um novo registro de hoje, use "📥 Arquivar hoje" no modo edição.</p>
+    <div id="historyList" class="modal-list"><p style="padding:10px;color:#888;font-size:12.5px;">Carregando datas...</p></div>
+    <div class="modal-actions">
+      <button id="historyCancelBtn" class="modal-cancel">Fechar</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-backdrop" id="deviceFilterModal">
   <div class="modal-box">
@@ -314,6 +346,7 @@
 <div class="admin-bar" id="adminBar">
   <button id="addRowBtn">+ Célula</button>
   <button id="saveSheetBtn" class="save-sheet-btn">💾 Salvar no Sheets</button>
+  <button id="archiveTodayBtn" class="archive-btn">📥 Arquivar hoje</button>
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
@@ -666,6 +699,138 @@ function startPolling(){
 }
 function stopPolling(){ clearInterval(pollTimer); pollTimer=null; }
 
+/* ============ HISTÓRICO ============ */
+let historyMode = false;
+let historyDate = null;
+let liveAreasBackup = null;
+let liveCurrentBackup = 0;
+
+function todayISO(){
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return yyyy+'-'+mm+'-'+dd;
+}
+function formatDateBR(iso){
+  const parts = String(iso).split('-');
+  return parts.length===3 ? (parts[2]+'/'+parts[1]+'/'+parts[0]) : iso;
+}
+
+async function enterHistoryMode(dateIso){
+  if(!syncUrl){ alert('Sincronização não está configurada.'); return; }
+  setSyncStatus('syncing');
+  const res = await doSyncGet('loadHistory', {date:dateIso});
+  if(!res || !res.ok){
+    setSyncStatus('error');
+    alert('Não foi possível carregar o histórico de '+formatDateBR(dateIso)+': '+((res&&res.error)||'erro desconhecido'));
+    return;
+  }
+  setSyncStatus('ok');
+  if(!historyMode){
+    liveAreasBackup = state.areas;
+    liveCurrentBackup = state.current;
+  }
+  const areas = res.areas||[];
+  areas.forEach(a=>{ if(a.active===undefined) a.active=true; });
+  normalizeAreas(areas);
+  state.areas = areas;
+  state.current = 0;
+  historyMode = true;
+  historyDate = dateIso;
+  stopPolling(); stopRotation(); paused = true;
+  document.getElementById('playPauseBtn').textContent = '▶';
+  document.getElementById('historyBanner').classList.add('show');
+  document.getElementById('historyBannerText').textContent = '📅 Visualizando histórico de '+formatDateBR(dateIso)+' — somente leitura';
+  if(adminOpen){ adminOpen=false; document.getElementById('adminBar').classList.remove('open'); }
+  closeHistoryModal();
+  ensureVisibleCurrent();
+  render();
+}
+function exitHistoryMode(){
+  if(!historyMode) return;
+  state.areas = liveAreasBackup;
+  state.current = liveCurrentBackup;
+  liveAreasBackup = null;
+  historyMode = false;
+  historyDate = null;
+  document.getElementById('historyBanner').classList.remove('show');
+  ensureVisibleCurrent();
+  render();
+  if(syncUrl){ loadFromSheet(); startPolling(); }
+}
+
+const historyModal = document.getElementById('historyModal');
+function openHistoryModal(){
+  historyModal.classList.add('open');
+  const listEl = document.getElementById('historyList');
+  listEl.innerHTML = '<p style="padding:10px;color:#888;font-size:12.5px;">Carregando datas...</p>';
+  if(!syncUrl){
+    listEl.innerHTML = '<p style="padding:10px;color:#888;font-size:12.5px;">Sincronização não configurada.</p>';
+    return;
+  }
+  doSyncGet('listHistoryDates', {}).then(res=>{
+    if(!res || !res.ok){
+      listEl.innerHTML = '<p style="padding:10px;color:#c0392b;font-size:12.5px;">Falha ao buscar datas: '+((res&&res.error)||'erro')+'</p>';
+      return;
+    }
+    const dates = res.dates||[];
+    if(!dates.length){
+      listEl.innerHTML = '<p style="padding:10px;color:#888;font-size:12.5px;">Nenhuma data arquivada ainda. Use "📥 Arquivar hoje" no modo edição pra criar o primeiro registro.</p>';
+      return;
+    }
+    listEl.innerHTML = '';
+    dates.forEach(d=>{
+      const row = document.createElement('div');
+      row.className = 'hist-date-row';
+      const span = document.createElement('span');
+      span.textContent = formatDateBR(d);
+      const btn = document.createElement('button');
+      btn.textContent = 'Ver';
+      btn.onclick = ()=> enterHistoryMode(d);
+      row.appendChild(span); row.appendChild(btn);
+      listEl.appendChild(row);
+    });
+  });
+}
+function closeHistoryModal(){ historyModal.classList.remove('open'); }
+
+async function archiveToday(){
+  if(!syncUrl){ alert('Sincronização não está configurada.'); return; }
+  const date = todayISO();
+  if(!confirm('Arquivar o sequenciamento de HOJE ('+formatDateBR(date)+')?\n\nSe já existir um arquivo de hoje, ele será substituído pelo estado atual da tela.')) return;
+
+  const btn = document.getElementById('archiveTodayBtn');
+  const original = btn.textContent;
+  const totalRows = countCells(state.areas);
+  let done = 0;
+  try{
+    setSyncStatus('syncing');
+    btn.textContent = '📥 Limpando arquivo do dia...';
+    const clearRes = await doSyncGet('archiveClearDay', {date});
+    if(!clearRes || !clearRes.ok) throw new Error((clearRes&&clearRes.error)||'falha ao preparar o arquivo do dia');
+
+    for(const area of state.areas){
+      for(const row of (area.celulas||[])){
+        done++;
+        btn.textContent = '📥 Arquivando '+done+'/'+totalRows+'...';
+        const r = await doSyncGet('archiveRow', {
+          date, area: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO',
+          pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos)
+        });
+        if(!r || !r.ok) throw new Error('falha ao arquivar "'+(row.celula||row.pn)+'" em "'+area.name+'"');
+      }
+    }
+    setSyncStatus('ok');
+    btn.textContent = original;
+    alert('✅ Arquivado: '+formatDateBR(date)+' — '+state.areas.length+' área(s), '+totalRows+' célula(s).');
+  }catch(err){
+    setSyncStatus('error');
+    btn.textContent = original;
+    alert('⚠️ Falha ao arquivar: '+err.message);
+  }
+}
+
 
 /* ============ ROTATION ============ */
 let rotateTimer = null, progressTimer = null, progressPct = 0, paused = false;
@@ -983,6 +1148,7 @@ function toggleHoraCell(to, which, standardValue){
   td.textContent = isOff ? '' : standardValue;
   td.title = isOff ? 'Clique para voltar ao horário padrão ('+standardValue+')' : 'Clique para deixar em branco';
   td.addEventListener('click', ()=>{
+    if(historyMode) return;
     to[offKey] = !to[offKey];
     to[which] = to[offKey] ? '' : standardValue;
     saveData(); markDirty(); render();
@@ -1020,6 +1186,7 @@ function obsCell(to, onSync){
     : 'Clique: marcar rack (branco → azul → roxo → vermelho)';
 
   td.addEventListener('click', ()=>{
+    if(historyMode) return;
     if(td.getAttribute('contenteditable')==='true') return;
     const order = ['','azul','roxo','vermelho'];
     const idx = order.indexOf(to.rack||'');
@@ -1061,6 +1228,10 @@ const EDIT_PASSWORD = 'mbblog';
 let editUnlocked = false; // já digitou a senha certa nesta sessão (evita pedir de novo toda hora)
 
 document.getElementById('adminToggle').addEventListener('click', ()=>{
+  if(historyMode){
+    alert('Você está vendo um histórico (somente leitura). Clique em "🔴 Voltar ao ao vivo" antes de editar.');
+    return;
+  }
   if(!adminOpen){
     if(!editUnlocked){
       const pwd = prompt('Senha para editar o painel:');
@@ -1311,6 +1482,13 @@ document.getElementById('deviceFilterSaveBtn').addEventListener('click', ()=>{
   if(!paused) startRotation();
 });
 deviceFilterModal.addEventListener('click', (e)=>{ if(e.target===deviceFilterModal) closeDeviceFilterModal(); });
+
+/* ============ HISTÓRICO — listeners ============ */
+document.getElementById('historyBtn').addEventListener('click', openHistoryModal);
+document.getElementById('historyCancelBtn').addEventListener('click', closeHistoryModal);
+historyModal.addEventListener('click', (e)=>{ if(e.target===historyModal) closeHistoryModal(); });
+document.getElementById('exitHistoryBtn').addEventListener('click', exitHistoryMode);
+document.getElementById('archiveTodayBtn').addEventListener('click', archiveToday);
 
 /* ============ SYNC CONFIG BUTTON ============ */
 document.getElementById('syncConfigBtn').addEventListener('click', ()=>{
