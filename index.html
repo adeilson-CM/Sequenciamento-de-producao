@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sequenciamento de Produção — Gestamp Taubaté</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0b3d78">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1553,13 +1556,16 @@ if(syncUrl){
   setSyncStatus('off');
 }
 
-/* ============ PWA: registra service worker (instalável como app) ============ */
+/* PWA/Service Worker removido de propósito: causava cache "grudado" de versões antigas
+   do painel, difícil de perceber. Usando só este arquivo único, cada atualização do
+   index.html no GitHub Pages já reflete na hora, sem precisar limpar cache manualmente. */
+
+/* Se um Service Worker de uma versão anterior ainda estiver registrado no navegador de
+   alguém, desregistra sozinho na primeira vez que essa versão do painel carregar. */
 if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('service-worker.js').catch(()=>{
-      console.warn('Service worker não registrado (ok se estiver rodando como arquivo local sem servidor).');
-    });
-  });
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r=>r.unregister());
+  }).catch(()=>{});
 }
 </script>
 </body>
