@@ -106,6 +106,31 @@
   .sync-dot.sync-ok{background:#3ecf6e;}
   .sync-dot.sync-syncing{background:var(--orange);animation:syncpulse 1s infinite;}
   .sync-dot.sync-error{background:var(--red);}
+
+  /* ===== MODAL (config. de TV/dispositivo) ===== */
+  .modal-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;
+    align-items:center;justify-content:center;
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal-box{
+    background:#fff;border-radius:10px;padding:20px 22px;max-width:480px;width:92%;
+    max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);
+  }
+  .modal-box h3{margin:0 0 6px;color:var(--blue-dark);font-size:17px;}
+  .modal-hint{margin:0 0 12px;color:#666;font-size:12.5px;line-height:1.4;}
+  .modal-quick{display:flex;gap:8px;margin-bottom:10px;}
+  .modal-quick button{
+    background:#eef2f7;border:1px solid #d5dce5;border-radius:5px;padding:5px 10px;
+    font-size:11.5px;cursor:pointer;color:#333;
+  }
+  .modal-list{overflow-y:auto;flex:1;border:1px solid #eee;border-radius:6px;padding:6px 10px;margin-bottom:14px;}
+  .modal-list label{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13.5px;border-bottom:1px solid #f2f2f2;cursor:pointer;}
+  .modal-list label:last-child{border-bottom:none;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+  .modal-actions button{border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;}
+  .modal-cancel{background:#eee;color:#444;}
+  .modal-save{background:var(--blue-dark);color:#fff;}
   @keyframes syncpulse{0%{opacity:1;}50%{opacity:.35;}100%{opacity:1;}}
   .playpause{
     background:rgba(255,255,255,.12);border:none;color:#fff;
@@ -254,10 +279,27 @@
   <button class="nav-btn" id="nextBtn" title="Próxima área">›</button>
   <button class="playpause" id="playPauseBtn" title="Pausar/Retomar rotação">⏸</button>
   <button class="fullscreen-btn" id="fullscreenBtn" title="Tela cheia">⛶</button>
+  <button class="fullscreen-btn" id="deviceFilterBtn" title="Escolher quais áreas aparecem NESTA tela">📺</button>
   <span class="sync-dot sync-off" id="syncDot"></span>
   <button class="fullscreen-btn" id="syncConfigBtn" title="Configurar sincronização com Google Sheets">⚙</button>
 </div>
 <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+
+<div class="modal-backdrop" id="deviceFilterModal">
+  <div class="modal-box">
+    <h3>📺 Áreas nesta tela</h3>
+    <p class="modal-hint">Escolha quais áreas aparecem só neste aparelho/navegador. Não afeta outras TVs nem a planilha — é uma preferência local.</p>
+    <div class="modal-quick">
+      <button id="deviceFilterAllBtn">Marcar todas</button>
+      <button id="deviceFilterNoneBtn">Desmarcar todas</button>
+    </div>
+    <div id="deviceFilterList" class="modal-list"></div>
+    <div class="modal-actions">
+      <button id="deviceFilterCancelBtn" class="modal-cancel">Cancelar</button>
+      <button id="deviceFilterSaveBtn" class="modal-save">Salvar nesta tela</button>
+    </div>
+  </div>
+</div>
 
 <div class="filter-bar" id="filterBar">
   <input type="text" id="searchInput" placeholder="🔎 Buscar por P.N, célula, projeto ou observação...">
@@ -628,8 +670,33 @@ function stopPolling(){ clearInterval(pollTimer); pollTimer=null; }
 /* ============ ROTATION ============ */
 let rotateTimer = null, progressTimer = null, progressPct = 0, paused = false;
 
+/* ============ FILTRO LOCAL DESTA TELA/DISPOSITIVO (não sincroniza, fica só neste navegador) ============ */
+const DEVICE_FILTER_KEY = 'gestamp_seq_device_area_filter';
+function getDeviceFilter(){
+  try{
+    const raw = localStorage.getItem(DEVICE_FILTER_KEY);
+    if(!raw) return null;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : null;
+  }catch(e){ return null; }
+}
+function setDeviceFilter(namesOrNull){
+  if(!namesOrNull || !namesOrNull.length){
+    localStorage.removeItem(DEVICE_FILTER_KEY);
+  } else {
+    localStorage.setItem(DEVICE_FILTER_KEY, JSON.stringify(namesOrNull));
+  }
+}
+
 function activeAreaIndexes(){
   const idxs = state.areas.map((a,i)=>i).filter(i=> state.areas[i].active !== false);
+  const deviceFilter = getDeviceFilter();
+  if(deviceFilter && deviceFilter.length){
+    const filtered = idxs.filter(i=> deviceFilter.includes(state.areas[i].name));
+    if(filtered.length) return filtered;
+    // se a seleção local não bate com nenhuma área ativa no momento (ex: área foi renomeada/excluída),
+    // cai pra lista completa em vez de deixar a tela em branco
+  }
   return idxs.length ? idxs : state.areas.map((a,i)=>i); // fallback: se nada ativo, usa todas
 }
 function ensureVisibleCurrent(){
@@ -1202,6 +1269,47 @@ document.getElementById('fullscreenBtn').addEventListener('click', ()=>{
 document.addEventListener('fullscreenchange', ()=>{
   document.getElementById('fullscreenBtn').textContent = document.fullscreenElement ? '⤦' : '⛶';
 });
+
+/* ============ CONFIG. DE TV/DISPOSITIVO (filtro local de áreas) ============ */
+const deviceFilterModal = document.getElementById('deviceFilterModal');
+function openDeviceFilterModal(){
+  const listEl = document.getElementById('deviceFilterList');
+  const current = getDeviceFilter(); // null = mostra todas (padrão)
+  listEl.innerHTML = '';
+  state.areas.forEach(a=>{
+    const label = document.createElement('label');
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = a.name;
+    chk.checked = current ? current.includes(a.name) : true; // sem filtro salvo = tudo marcado (mostra tudo)
+    label.appendChild(chk);
+    label.appendChild(document.createTextNode(a.name || '(sem nome)'));
+    listEl.appendChild(label);
+  });
+  deviceFilterModal.classList.add('open');
+}
+function closeDeviceFilterModal(){ deviceFilterModal.classList.remove('open'); }
+
+document.getElementById('deviceFilterBtn').addEventListener('click', openDeviceFilterModal);
+document.getElementById('deviceFilterCancelBtn').addEventListener('click', closeDeviceFilterModal);
+document.getElementById('deviceFilterAllBtn').addEventListener('click', ()=>{
+  document.querySelectorAll('#deviceFilterList input[type=checkbox]').forEach(c=>c.checked=true);
+});
+document.getElementById('deviceFilterNoneBtn').addEventListener('click', ()=>{
+  document.querySelectorAll('#deviceFilterList input[type=checkbox]').forEach(c=>c.checked=false);
+});
+document.getElementById('deviceFilterSaveBtn').addEventListener('click', ()=>{
+  const checked = Array.from(document.querySelectorAll('#deviceFilterList input[type=checkbox]:checked')).map(c=>c.value);
+  const allNames = state.areas.map(a=>a.name);
+  // se marcou tudo, salva "sem filtro" (null) — mais simples e já é o padrão
+  const isAll = checked.length === allNames.length;
+  setDeviceFilter(isAll ? null : checked);
+  closeDeviceFilterModal();
+  ensureVisibleCurrent();
+  render();
+  if(!paused) startRotation();
+});
+deviceFilterModal.addEventListener('click', (e)=>{ if(e.target===deviceFilterModal) closeDeviceFilterModal(); });
 
 /* ============ SYNC CONFIG BUTTON ============ */
 document.getElementById('syncConfigBtn').addEventListener('click', ()=>{
