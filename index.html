@@ -978,7 +978,21 @@ function refreshAdminRowState(){
     td.setAttribute('contenteditable', adminOpen ? 'true':'false');
   });
 }
+const EDIT_PASSWORD = 'mbblog';
+let editUnlocked = false; // já digitou a senha certa nesta sessão (evita pedir de novo toda hora)
+
 document.getElementById('adminToggle').addEventListener('click', ()=>{
+  if(!adminOpen){
+    if(!editUnlocked){
+      const pwd = prompt('Senha para editar o painel:');
+      if(pwd === null) return; // cancelou
+      if(pwd !== EDIT_PASSWORD){
+        alert('Senha incorreta.');
+        return;
+      }
+      editUnlocked = true;
+    }
+  }
   if(adminOpen && dirty && syncUrl){
     alert('Você tem alterações que ainda não foram enviadas ao Google Sheets.\n\nQuando quiser, clique em "💾 Salvar no Sheets" (na barra de edição) pra publicar. Isso NUNCA acontece sozinho — só quando você clicar nesse botão.');
   }
