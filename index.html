@@ -354,7 +354,7 @@
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho → verde. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
+  <span class="admin-hint">Cada edição já sincroniza sozinha com o Google Sheets (olha a bolinha 🟢 do lado do ⚙ pra ver o status). O botão <b>💾 Salvar no Sheets</b> é só pra reorganizar tudo de uma vez (ex: depois de importar um Excel). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho → verde. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
 </div>
 
 <div class="table-wrap">
@@ -579,6 +579,89 @@ function doSyncGet(action, params){
   return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET'})
     .then(r=>r.json())
     .catch(err=>{ console.warn('Falha de sincronização:', err); return null; });
+}
+
+/* ============ AUTO-SYNC (salva sozinho a cada edição) ============
+   Cada chamada é individual e travada no lado do Google (LockService), então mesmo
+   que várias edições disparem quase juntas, elas nunca se atropelam — cada uma espera
+   a anterior terminar. Isso é diferente do "clear + reconstrói tudo" do botão de salvar
+   manual, que só roda quando você clica em 💾 Salvar no Sheets (útil pra reorganizar tudo
+   de uma vez, ex: depois de importar um Excel). */
+const autoSyncQueue = []; // fila de tarefas assíncronas, roda uma de cada vez, em ordem
+let autoSyncRunning = false;
+function queueAutoSync(taskFn){
+  if(!syncUrl) return;
+  autoSyncQueue.push(taskFn);
+  runAutoSyncQueue();
+}
+async function runAutoSyncQueue(){
+  if(autoSyncRunning) return;
+  autoSyncRunning = true;
+  setSyncStatus('syncing');
+  while(autoSyncQueue.length){
+    const task = autoSyncQueue.shift();
+    try{
+      const res = await task();
+      if(!res || !res.ok){
+        console.warn('Auto-sync: falha em uma etapa', res);
+        setSyncStatus('error');
+      }
+    }catch(e){
+      console.warn('Auto-sync: erro', e);
+      setSyncStatus('error');
+    }
+  }
+  autoSyncRunning = false;
+  if(getSyncStatusEl() && getSyncStatusEl().className.indexOf('sync-error')===-1){ setSyncStatus('ok'); }
+}
+function getSyncStatusEl(){ return document.getElementById('syncDot'); }
+
+const rowSyncTimers = {};
+function syncSaveRowDebounced(area, row){
+  if(!syncUrl || !area || !row) return;
+  const key = area.name+'|'+row.pn+'|'+row.celula;
+  clearTimeout(rowSyncTimers[key]);
+  rowSyncTimers[key] = setTimeout(()=>{
+    queueAutoSync(()=> doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) }));
+  }, 500);
+}
+function syncDeleteRow(area, pn, celula){
+  if(!syncUrl || !area) return;
+  queueAutoSync(()=> doSyncGet('deleteRow', { area: area.name, pn, celula }));
+}
+// edição quase simultânea de P.N + CÉLULA (renomear uma linha) — agrupa numa única troca
+const identityPending = new WeakMap();
+function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
+  if(!syncUrl || !area) return;
+  let rec = identityPending.get(row);
+  if(!rec){ rec = {oldPn, oldCelula}; identityPending.set(row, rec); }
+  clearTimeout(rec.timer);
+  rec.timer = setTimeout(()=>{
+    const finalOldPn = rec.oldPn, finalOldCelula = rec.oldCelula;
+    identityPending.delete(row);
+    queueAutoSync(async ()=>{
+      if(finalOldPn!==newPn || finalOldCelula!==newCelula){
+        await doSyncGet('deleteRow', { area: area.name, pn: finalOldPn, celula: finalOldCelula });
+      }
+      return doSyncGet('saveRow', { area: area.name, pn: newPn, celula: newCelula, turnos: JSON.stringify(row.turnos) });
+    });
+  }, 600);
+}
+function syncAddArea(area){
+  if(!syncUrl) return;
+  queueAutoSync(()=> doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' }));
+}
+function syncSetAreaMeta(area){
+  if(!syncUrl) return;
+  queueAutoSync(()=> doSyncGet('setAreaMeta', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' }));
+}
+function syncRenameArea(oldName, newName){
+  if(!syncUrl) return;
+  queueAutoSync(()=> doSyncGet('renameArea', { oldName, newName }));
+}
+function syncDeleteArea(name){
+  if(!syncUrl) return;
+  queueAutoSync(()=> doSyncGet('deleteArea', { name }));
 }
 
 /* Envio manual e completo pro Google Sheets — acionado só pelo botão "💾 Salvar no Sheets".
@@ -974,6 +1057,7 @@ function renderInner(){
         a.active = chk.checked;
         saveData(); markDirty();
         render();
+        syncSetAreaMeta(a);
       });
       d.appendChild(chk);
     }
@@ -991,6 +1075,7 @@ function renderInner(){
         a.name = newName;
         saveData(); markDirty();
         document.getElementById('areaNameLabel').innerHTML = (state.areas[state.current].name||"ÁREA") + '<span>Área atual</span>';
+        if(newName!==oldName) syncRenameArea(oldName, newName);
       });
       label.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); label.blur(); } });
     }
@@ -1007,6 +1092,7 @@ function renderInner(){
         saveData(); markDirty();
         ensureVisibleCurrent();
         render();
+        syncDeleteArea(a.name);
       });
       d.appendChild(del);
     }
@@ -1025,6 +1111,7 @@ function renderInner(){
       state.areas.push(newArea);
       saveData(); markDirty();
       goTo(state.areas.length-1);
+      syncAddArea(newArea);
     });
     dotsEl.appendChild(addDot);
   }
@@ -1094,11 +1181,13 @@ function renderInner(){
   filteredRows.forEach((row)=>{
     const tr = document.createElement('tr');
 
-    tr.appendChild(editableCell(row.pn, (v)=>{
+    tr.appendChild(editableCell(row.pn, (v,old)=>{
       row.pn=v; saveData(); markDirty();
+      if(v!==old) syncRowIdentityChange(area, old, row.celula, v, row.celula, row);
     }, 'pn'));
-    tr.appendChild(editableCell(row.celula, (v)=>{
+    tr.appendChild(editableCell(row.celula, (v,old)=>{
       row.celula=v; saveData(); markDirty();
+      if(v!==old) syncRowIdentityChange(area, row.pn, old, row.pn, v, row);
     }, 'celula'));
 
     visibleTurnos.forEach((t,idx)=>{
@@ -1108,12 +1197,13 @@ function renderInner(){
           to.projeto=v; saveData(); markDirty();
           // replica o cliente pros outros turnos da mesma célula (não editáveis lá, mas mantém o dado consistente)
           TURNOS.forEach(tt=>{ if(row.turnos[tt]) row.turnos[tt].projeto = v; });
+          syncSaveRowDebounced(area, row);
         }, 'projeto'));
       }
-      tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); markDirty();}, 'lote'));
-      tr.appendChild(toggleHoraCell(to, 'inicio', TURNO_HORARIOS[t].inicio));
-      tr.appendChild(toggleHoraCell(to, 'final', TURNO_HORARIOS[t].final));
-      tr.appendChild(obsCell(to));
+      tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); markDirty(); syncSaveRowDebounced(area,row);}, 'lote'));
+      tr.appendChild(toggleHoraCell(to, 'inicio', TURNO_HORARIOS[t].inicio, ()=>syncSaveRowDebounced(area,row)));
+      tr.appendChild(toggleHoraCell(to, 'final', TURNO_HORARIOS[t].final, ()=>syncSaveRowDebounced(area,row)));
+      tr.appendChild(obsCell(to, ()=>syncSaveRowDebounced(area,row)));
     });
 
     if(adminOpen){
@@ -1126,6 +1216,7 @@ function renderInner(){
         const idx = allRows.indexOf(row);
         if(idx>-1) allRows.splice(idx,1);
         saveData(); markDirty(); render();
+        syncDeleteRow(area, row.pn, row.celula);
       };
       tdA.appendChild(btn);
       tr.appendChild(tdA);
@@ -1143,7 +1234,7 @@ function renderInner(){
 }
 
 // célula de horário (INÍCIO/FINAL) — clique alterna entre o horário padrão do turno e em branco
-function toggleHoraCell(to, which, standardValue){
+function toggleHoraCell(to, which, standardValue, onSync){
   // which: 'inicio' ou 'final'
   const offKey = which+'Off';
   const td = document.createElement('td');
@@ -1156,6 +1247,7 @@ function toggleHoraCell(to, which, standardValue){
     to[offKey] = !to[offKey];
     to[which] = to[offKey] ? '' : standardValue;
     saveData(); markDirty(); render();
+    if(onSync) onSync();
   });
   return td;
 }
@@ -1265,6 +1357,7 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
   const newRow = {pn:"NOVO P.N", celula:"NOVA CÉLULA", turnos: blankTurnos()};
   area.celulas.push(newRow);
   saveData(); markDirty(); render();
+  syncSaveRowDebounced(area, newRow);
   // foca a célula recém-criada para edição imediata
   requestAnimationFrame(()=>{
     const cells = document.querySelectorAll('#tbody tr:last-child td.pn');
