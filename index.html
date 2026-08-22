@@ -586,11 +586,27 @@ function doSyncGet(action, params){
    que várias edições disparem quase juntas, elas nunca se atropelam — cada uma espera
    a anterior terminar. Isso é diferente do "clear + reconstrói tudo" do botão de salvar
    manual, que só roda quando você clica em 💾 Salvar no Sheets (útil pra reorganizar tudo
-   de uma vez, ex: depois de importar um Excel). */
+   de uma vez, ex: depois de importar um Excel).
+
+   IMPORTANTE: a atualização automática de 20 em 20s (poll) é pausada assim que QUALQUER
+   edição é agendada (mesmo antes de a chamada de rede sair) e só volta depois que a fila
+   inteira terminar — isso evita que o poll busque a planilha "desatualizada" bem no meio
+   de uma edição e sobrescreva o clique local antes dele terminar de subir. */
 const autoSyncQueue = []; // fila de tarefas assíncronas, roda uma de cada vez, em ordem
 let autoSyncRunning = false;
+function pauseAutoRefreshForEdit(){
+  stopPolling();
+}
+function resumeAutoRefreshIfIdle(){
+  // só religa o poll quando não sobrou nada pendente (fila vazia, nada rodando, nenhum debounce em espera)
+  const hasPendingTimers = Object.keys(rowSyncTimers).some(k=>rowSyncTimers[k]);
+  if(!autoSyncRunning && autoSyncQueue.length===0 && !hasPendingTimers && syncUrl){
+    startPolling();
+  }
+}
 function queueAutoSync(taskFn){
   if(!syncUrl) return;
+  pauseAutoRefreshForEdit();
   autoSyncQueue.push(taskFn);
   runAutoSyncQueue();
 }
@@ -613,15 +629,18 @@ async function runAutoSyncQueue(){
   }
   autoSyncRunning = false;
   if(getSyncStatusEl() && getSyncStatusEl().className.indexOf('sync-error')===-1){ setSyncStatus('ok'); }
+  resumeAutoRefreshIfIdle();
 }
 function getSyncStatusEl(){ return document.getElementById('syncDot'); }
 
 const rowSyncTimers = {};
 function syncSaveRowDebounced(area, row){
   if(!syncUrl || !area || !row) return;
+  pauseAutoRefreshForEdit();
   const key = area.name+'|'+row.pn+'|'+row.celula;
   clearTimeout(rowSyncTimers[key]);
   rowSyncTimers[key] = setTimeout(()=>{
+    rowSyncTimers[key] = null;
     queueAutoSync(()=> doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos) }));
   }, 500);
 }
@@ -633,6 +652,7 @@ function syncDeleteRow(area, pn, celula){
 const identityPending = new WeakMap();
 function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
   if(!syncUrl || !area) return;
+  pauseAutoRefreshForEdit();
   let rec = identityPending.get(row);
   if(!rec){ rec = {oldPn, oldCelula}; identityPending.set(row, rec); }
   clearTimeout(rec.timer);
