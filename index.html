@@ -302,6 +302,7 @@
   <button class="fullscreen-btn" id="historyBtn" title="Consultar histórico por data">📅</button>
   <span class="sync-dot sync-off" id="syncDot"></span>
   <button class="fullscreen-btn" id="syncConfigBtn" title="Configurar sincronização com Google Sheets">⚙</button>
+  <button class="fullscreen-btn" id="syncDebugBtn" title="Ver últimas sincronizações (debug)">🐞</button>
 </div>
 <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
 
@@ -573,12 +574,17 @@ function setSyncStatus(st){
   }[st] || '';
 }
 
+const syncDebugLog = [];
 function doSyncGet(action, params){
   if(!syncUrl) return Promise.resolve(null);
   const qs = new URLSearchParams(Object.assign({action}, params||{})).toString();
+  const entry = {time: new Date().toLocaleTimeString('pt-BR'), action, params: params||{}, response:null};
+  syncDebugLog.push(entry);
+  if(syncDebugLog.length>30) syncDebugLog.shift();
   return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET'})
     .then(r=>r.json())
-    .catch(err=>{ console.warn('Falha de sincronização:', err); return null; });
+    .then(j=>{ entry.response = j; return j; })
+    .catch(err=>{ entry.response = {ok:false, error:String(err)}; console.warn('Falha de sincronização:', err); return null; });
 }
 
 /* ============ AUTO-SYNC (salva sozinho a cada edição) ============
@@ -1624,6 +1630,20 @@ document.getElementById('syncConfigBtn').addEventListener('click', ()=>{
     setSyncStatus('off');
     stopPolling();
   }
+});
+
+document.getElementById('syncDebugBtn').addEventListener('click', ()=>{
+  if(!syncDebugLog.length){
+    alert('Nenhuma sincronização registrada ainda nesta sessão. Faça uma edição e tente de novo.');
+    return;
+  }
+  const lines = syncDebugLog.slice(-8).map(e=>{
+    const paramsStr = JSON.stringify(e.params);
+    const respStr = e.response ? JSON.stringify(e.response) : '(sem resposta ainda / falhou)';
+    return '['+e.time+'] '+e.action+'\nENVIADO: '+paramsStr+'\nRECEBIDO: '+respStr;
+  }).join('\n\n---\n\n');
+  // mostra num prompt (seleção de texto fácil de copiar) já que pode ser um texto longo
+  window.prompt('Últimas sincronizações (copie com Ctrl+C e me envie):', lines);
 });
 
 /* ============ FILTER BAR EVENTS ============ */
