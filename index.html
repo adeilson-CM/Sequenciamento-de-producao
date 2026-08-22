@@ -577,11 +577,13 @@ function setSyncStatus(st){
 const syncDebugLog = [];
 function doSyncGet(action, params){
   if(!syncUrl) return Promise.resolve(null);
-  const qs = new URLSearchParams(Object.assign({action}, params||{})).toString();
+  // "_ts" garante que a URL nunca se repete, pra nenhum cache (navegador, proxy, etc.)
+  // devolver uma resposta antiga guardada em vez de consultar a planilha de verdade
+  const qs = new URLSearchParams(Object.assign({action, _ts: Date.now()+'_'+Math.random().toString(36).slice(2)}, params||{})).toString();
   const entry = {time: new Date().toLocaleTimeString('pt-BR'), action, params: params||{}, response:null};
   syncDebugLog.push(entry);
   if(syncDebugLog.length>30) syncDebugLog.shift();
-  return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET'})
+  return fetch(syncUrl + (syncUrl.indexOf('?')>-1?'&':'?') + qs, {method:'GET', cache:'no-store'})
     .then(r=>r.json())
     .then(j=>{ entry.response = j; return j; })
     .catch(err=>{ entry.response = {ok:false, error:String(err)}; console.warn('Falha de sincronização:', err); return null; });
