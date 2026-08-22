@@ -142,7 +142,8 @@
 
   tbody td.pn{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;}
   tbody td.celula{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(8px,0.72vw,11px);white-space:normal;}
-  tbody td.hora{background:var(--green-bg);color:#1f5c3d;font-weight:600;}
+  tbody td.hora{background:var(--green-bg);color:#1f5c3d;font-weight:600;cursor:pointer;}
+  tbody td.hora:empty::after{content:'—';color:#c7d0da;}
   tbody td.obs.rack-azul{background:#2f6fd6 !important;color:#fff !important;font-weight:800;}
   tbody td.obs.rack-roxo{background:#7d3fc9 !important;color:#fff !important;font-weight:800;}
   tbody td.obs.rack-vermelho{background:#d6362f !important;color:#fff !important;font-weight:800;}
@@ -274,7 +275,7 @@
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. INÍCIO/FINAL são fixos por turno.</span>
+  <span class="admin-hint">Edite à vontade — tudo salva neste navegador na hora. Quando terminar os ajustes, clique em <b>💾 Salvar no Sheets</b> para mandar tudo pra planilha de uma vez (evita duplicar/sobrepor). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
 </div>
 
 <div class="table-wrap">
@@ -312,9 +313,11 @@ function normalizeAreas(list){
       if(!row.turnos) row.turnos = {};
       TURNOS.forEach(t=>{
         if(!row.turnos[t]) row.turnos[t] = blankTurno();
+        const to = row.turnos[t];
         const h = TURNO_HORARIOS[t];
-        row.turnos[t].inicio = h.inicio;
-        row.turnos[t].final = h.final;
+        // respeita o "desligado" (em branco); só materializa o horário padrão quando ligado
+        to.inicio = to.inicioOff ? '' : h.inicio;
+        to.final = to.finalOff ? '' : h.final;
       });
       // CLIENTE agora é único por célula (só aparece/edita no 1º turno) — unifica
       // eventuais valores divergentes usando o do 1T (ou o primeiro preenchido) como referência
@@ -327,7 +330,7 @@ function normalizeAreas(list){
 const STORAGE_KEY = "gestamp_sequenciamento_producao_v1";
 const ROTATE_SECONDS = 10;
 
-function blankTurno(){ return {projeto:"",lote:"",inicio:"",final:"",obs:"",rack:""}; }
+function blankTurno(){ return {projeto:"",lote:"",inicio:"",final:"",obs:"",rack:"",inicioOff:false,finalOff:false}; }
 function blankTurnos(){ const o={}; TURNOS.forEach(t=>o[t]=blankTurno()); return o; }
 
 function defaultData(){
@@ -871,8 +874,8 @@ function renderInner(){
         }, 'projeto'));
       }
       tr.appendChild(editableCell(to.lote, v=>{to.lote=v; saveData(); markDirty();}, 'lote'));
-      tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].inicio));
-      tr.appendChild(fixedHoraCell(TURNO_HORARIOS[t].final));
+      tr.appendChild(toggleHoraCell(to, 'inicio', TURNO_HORARIOS[t].inicio));
+      tr.appendChild(toggleHoraCell(to, 'final', TURNO_HORARIOS[t].final));
       tr.appendChild(obsCell(to));
     });
 
@@ -902,12 +905,20 @@ function renderInner(){
   refreshAdminRowState();
 }
 
-// célula de horário fixo (INÍCIO/FINAL) — não editável, sempre o padrão do turno
-function fixedHoraCell(value){
+// célula de horário (INÍCIO/FINAL) — clique alterna entre o horário padrão do turno e em branco
+function toggleHoraCell(to, which, standardValue){
+  // which: 'inicio' ou 'final'
+  const offKey = which+'Off';
   const td = document.createElement('td');
   td.className = 'hora';
-  td.textContent = value;
-  td.title = 'Horário padrão do turno (fixo)';
+  const isOff = !!to[offKey];
+  td.textContent = isOff ? '' : standardValue;
+  td.title = isOff ? 'Clique para voltar ao horário padrão ('+standardValue+')' : 'Clique para deixar em branco';
+  td.addEventListener('click', ()=>{
+    to[offKey] = !to[offKey];
+    to[which] = to[offKey] ? '' : standardValue;
+    saveData(); markDirty(); render();
+  });
   return td;
 }
 
@@ -1133,13 +1144,17 @@ function importExcelFile(file){
         }
         if(!TURNOS.includes(turno)) return; // linha de referência sem turno preenchido
         const rackVal = String(r['Rack (azul/roxo/vermelho/vazio)'] ?? r['Rack'] ?? '').trim().toLowerCase();
+        const inicioVal = String(r['Início']||'');
+        const finalVal = String(r['Final']||'');
         rowObj.turnos[turno] = {
           projeto: String(r['Cliente'] ?? r['Projeto'] ?? ''),
           lote: String(r['Lote']||''),
           rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho') ? rackVal : '',
-          inicio: String(r['Início']||''),
-          final: String(r['Final']||''),
-          obs: String(r['Observação']||'')
+          inicio: inicioVal,
+          final: finalVal,
+          obs: String(r['Observação']||''),
+          inicioOff: inicioVal === '',
+          finalOff: finalVal === ''
         };
       });
 
