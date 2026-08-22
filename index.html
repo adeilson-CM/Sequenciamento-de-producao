@@ -771,6 +771,7 @@ function renderTurnoToggles(){
 /* ============ RENDER ============ */
 function render(){
   try{
+    ensureVisibleCurrent(); // sempre corrige a área atual pro filtro/rotação valendo nesta tela, mesmo com 1 única área
     renderInner();
   }catch(err){
     showErrorBanner('Falha ao desenhar a tela: ' + (err && err.stack ? err.stack : String(err)));
