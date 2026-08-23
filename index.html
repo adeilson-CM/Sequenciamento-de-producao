@@ -162,6 +162,16 @@
 
   /* ===== TABLE ===== */
   .table-wrap{padding:12px 14px 20px;overflow-x:auto;}
+  .obs-geral-box{
+    max-width:1720px;margin:10px auto 0;background:#fffbea;border:1px solid #f0dca0;
+    border-radius:6px;padding:8px 12px;display:flex;align-items:flex-start;gap:8px;
+  }
+  .obs-geral-label{font-size:11.5px;font-weight:700;color:#8a5a00;white-space:nowrap;padding-top:1px;}
+  .obs-geral-text{
+    flex:1;font-size:13px;color:#333;min-height:20px;outline:none;white-space:pre-wrap;word-break:break-word;
+  }
+  .obs-geral-text:empty::before{content:'(vazio — clique aqui pra escrever, no modo edição)';color:#999;font-style:italic;}
+  .obs-geral-text[contenteditable="true"]:focus{background:#fff;box-shadow:0 0 0 2px var(--orange) inset;border-radius:4px;}
   .quadro-title{
     text-align:center;background:var(--blue-dark);color:#fff;font-weight:800;
     padding:7px;font-size:clamp(11px,1.1vw,14px);letter-spacing:1px;border-radius:6px 6px 0 0;
@@ -371,6 +381,11 @@
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+
+  <div class="obs-geral-box">
+    <span class="obs-geral-label">📝 Observação geral desta área:</span>
+    <div id="obsGeralText" class="obs-geral-text" spellcheck="false"></div>
+  </div>
 </div>
 
 <script>
@@ -682,11 +697,11 @@ function syncRowIdentityChange(area, oldPn, oldCelula, newPn, newCelula, row){
 }
 function syncAddArea(area){
   if(!syncUrl) return;
-  queueAutoSync(()=> doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' }));
+  queueAutoSync(()=> doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO', obsGeral: area.obsGeral||'' }));
 }
 function syncSetAreaMeta(area){
   if(!syncUrl) return;
-  queueAutoSync(()=> doSyncGet('setAreaMeta', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO' }));
+  queueAutoSync(()=> doSyncGet('setAreaMeta', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO', obsGeral: area.obsGeral||'' }));
 }
 function syncRenameArea(oldName, newName){
   if(!syncUrl) return;
@@ -1071,6 +1086,20 @@ function renderInner(){
   qEl.setAttribute('contenteditable','false');
   qEl.onblur = null;
 
+  // observação geral da área
+  const obsEl = document.getElementById('obsGeralText');
+  obsEl.textContent = area.obsGeral || '';
+  obsEl.setAttribute('contenteditable', adminOpen ? 'true' : 'false');
+  obsEl.onfocus = adminOpen ? ()=>{ obsEl.dataset.before = obsEl.textContent; } : null;
+  obsEl.onblur = adminOpen ? ()=>{
+    const val = obsEl.textContent.trim();
+    if(val !== (obsEl.dataset.before||'').trim()){
+      area.obsGeral = val;
+      saveData(); markDirty();
+      syncSetAreaMeta(area);
+    }
+  } : null;
+
   // dots
   const dotsEl = document.getElementById('dots');
   dotsEl.innerHTML = "";
@@ -1140,7 +1169,7 @@ function renderInner(){
     addDot.textContent = '+';
     addDot.title = 'Nova área';
     addDot.addEventListener('click', ()=>{
-      const newArea = {name:'NOVA ÁREA', quadro:'QUADRO', active:true, celulas:[]};
+      const newArea = {name:'NOVA ÁREA', quadro:'QUADRO', active:true, obsGeral:'', celulas:[]};
       state.areas.push(newArea);
       saveData(); markDirty();
       goTo(state.areas.length-1);
