@@ -360,7 +360,6 @@
 <button class="admin-toggle" id="adminToggle" title="Modo edição">✎</button>
 <div class="admin-bar" id="adminBar">
   <button id="addRowBtn">+ Célula</button>
-  <button id="saveSheetBtn" class="save-sheet-btn">💾 Salvar no Sheets</button>
   <button id="archiveTodayBtn" class="archive-btn">📥 Arquivar hoje</button>
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
@@ -716,62 +715,8 @@ function syncDeleteArea(name){
    Reescreve a planilha inteira do zero a partir do que está na tela agora, em sequência
    (uma requisição de cada vez, nunca em paralelo), evitando qualquer corrida/duplicação. */
 let savingNow = false;
-async function saveAllToSheet(){
-  if(!syncUrl){ alert('Sincronização não está configurada. Clique no ⚙ primeiro.'); return; }
-  if(savingNow) return;
-  savingNow = true;
-
-  const btn = document.getElementById('saveSheetBtn');
-  const originalLabel = btn ? btn.textContent : '';
-  const totalRows = countCells(state.areas);
-  let done = 0;
-  const setProgress = (msg)=>{ if(btn) btn.textContent = msg; };
-
-  try{
-    setSyncStatus('syncing');
-
-    // 1) prepara um rascunho zerado — a planilha "ao vivo" continua intacta até o commit final,
-    //    então quem estiver lendo (TV/outro dispositivo) nunca vê um estado pela metade
-    setProgress('💾 Preparando...');
-    const prepRes = await doSyncGet('prepareStaging', {});
-    if(!prepRes || !prepRes.ok){
-      throw new Error((prepRes && prepRes.error) || 'falha ao preparar o envio');
-    }
-
-    // 2) manda tudo pro rascunho, um de cada vez
-    for(const area of state.areas){
-      setProgress('💾 Salvando área "'+area.name+'"...');
-      const areaRes = await doSyncGet('addArea', { name: area.name, quadro: area.quadro||'QUADRO', ativo: (area.active!==false)?'SIM':'NAO', staging:'1' });
-      if(!areaRes || !areaRes.ok) throw new Error('falha ao salvar área "'+area.name+'"');
-
-      for(const row of (area.celulas||[])){
-        done++;
-        setProgress('💾 Salvando '+done+'/'+totalRows+'...');
-        const rowRes = await doSyncGet('saveRow', { area: area.name, pn: row.pn, celula: row.celula, turnos: JSON.stringify(row.turnos), staging:'1' });
-        if(!rowRes || !rowRes.ok) throw new Error('falha ao salvar "'+(row.celula||row.pn)+'" em "'+area.name+'"');
-      }
-    }
-
-    // 3) troca o rascunho pelo "ao vivo" de uma vez só — única etapa que os outros dispositivos percebem
-    setProgress('💾 Publicando...');
-    const commitRes = await doSyncGet('commitStaging', {});
-    if(!commitRes || !commitRes.ok){
-      throw new Error((commitRes && commitRes.error) || 'falha ao publicar os dados');
-    }
-
-    setSyncStatus('ok');
-    setProgress(originalLabel);
-    dirty = false;
-    lastKnownSheetCellCount = totalRows;
-    alert('✅ Salvo no Google Sheets: '+state.areas.length+' área(s), '+totalRows+' célula(s).');
-  }catch(err){
-    setSyncStatus('error');
-    setProgress(originalLabel);
-    alert('⚠️ Falha ao salvar no Sheets: '+err.message+'\n\nA planilha "ao vivo" não foi alterada (só o rascunho ficou incompleto) — seus dados continuam salvos neste navegador. Pode tentar salvar de novo.');
-  }finally{
-    savingNow = false;
-  }
-}
+/* saveAllToSheet() foi removida — o botão "💾 Salvar no Sheets" causava travas quando
+   disparado sem querer (todas as edições já sincronizam sozinhas, campo a campo). */
 
 function countCells(areasList){
   return (areasList||[]).reduce((n,a)=> n + ((a.celulas||[]).length), 0);
@@ -1423,25 +1368,6 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
     const cells = document.querySelectorAll('#tbody tr:last-child td.pn');
     if(cells.length){ const el = cells[cells.length-1]; el.focus(); document.execCommand && window.getSelection().selectAllChildren(el); }
   });
-});
-document.getElementById('saveSheetBtn').addEventListener('click', ()=>{
-  const totalAreas = state.areas.length;
-  const totalCells = countCells(state.areas);
-
-  // trava de segurança: se o que está na tela é bem menor do que a planilha já teve
-  // (ex: navegador com cópia local desatualizada), bloqueia e avisa em vez de sobrescrever
-  if(lastKnownSheetCellCount!==null && lastKnownSheetCellCount>0 && totalCells < lastKnownSheetCellCount*0.6){
-    alert(
-      '⚠️ Salvamento bloqueado por segurança.\n\n'+
-      'Esta tela só tem '+totalCells+' célula(s) no total, mas a planilha já chegou a ter '+lastKnownSheetCellCount+'.\n\n'+
-      'Isso pode indicar que este navegador está com uma cópia desatualizada/incompleta — salvar agora apagaria dados reais da planilha.\n\n'+
-      'Recarregue a página (Ctrl+Shift+R) pra buscar os dados atuais da planilha antes de tentar salvar de novo. Se isso for intencional (ex: você excluiu várias áreas de propósito), me avise.'
-    );
-    return;
-  }
-
-  if(!confirm('Salvar TODAS as áreas/células atuais no Google Sheets agora?\n\n'+totalAreas+' área(s), '+totalCells+' célula(s).\n\nIsso substitui o conteúdo da planilha pelo que está na tela.')) return;
-  saveAllToSheet();
 });
 document.getElementById('reloadSheetBtn').addEventListener('click', ()=>{
   if(!syncUrl){ alert('Sincronização não está configurada.'); return; }
