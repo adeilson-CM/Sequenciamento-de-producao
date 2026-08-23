@@ -641,6 +641,7 @@ async function runAutoSyncQueue(){
   if(autoSyncRunning) return;
   autoSyncRunning = true;
   setSyncStatus('syncing');
+  let allOk = true;
   while(autoSyncQueue.length){
     const task = autoSyncQueue.shift();
     try{
@@ -648,14 +649,19 @@ async function runAutoSyncQueue(){
       if(!res || !res.ok){
         console.warn('Auto-sync: falha em uma etapa', res);
         setSyncStatus('error');
+        allOk = false;
       }
     }catch(e){
       console.warn('Auto-sync: erro', e);
       setSyncStatus('error');
+      allOk = false;
     }
   }
   autoSyncRunning = false;
-  if(getSyncStatusEl() && getSyncStatusEl().className.indexOf('sync-error')===-1){ setSyncStatus('ok'); }
+  if(allOk){
+    setSyncStatus('ok');
+    dirty = false; // tudo que estava pendente já foi confirmado pela planilha
+  }
   resumeAutoRefreshIfIdle();
 }
 function getSyncStatusEl(){ return document.getElementById('syncDot'); }
@@ -1343,9 +1349,6 @@ document.getElementById('adminToggle').addEventListener('click', ()=>{
       }
       editUnlocked = true;
     }
-  }
-  if(adminOpen && dirty && syncUrl){
-    alert('Você tem alterações que ainda não foram enviadas ao Google Sheets.\n\nQuando quiser, clique em "💾 Salvar no Sheets" (na barra de edição) pra publicar. Isso NUNCA acontece sozinho — só quando você clicar nesse botão.');
   }
   adminOpen = !adminOpen;
   document.getElementById('adminBar').classList.toggle('open', adminOpen);
