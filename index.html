@@ -387,6 +387,7 @@ const TURNO_HORARIOS = {
 };
 // corrige qualquer valor de horário "sujo" (ex: data completa vinda de importação de Excel/Sheets)
 // e aplica sempre o padrão oficial de cada turno, em todas as áreas/células
+const HORA_OFF_TOKEN = 'OFF'; // sentinela gravada direto em Início/Final quando o horário está oculto
 function normalizeAreas(list){
   (list||[]).forEach(a=>{
     (a.celulas||[]).forEach(row=>{
@@ -395,9 +396,13 @@ function normalizeAreas(list){
         if(!row.turnos[t]) row.turnos[t] = blankTurno();
         const to = row.turnos[t];
         const h = TURNO_HORARIOS[t];
-        // respeita o "desligado" (em branco); só materializa o horário padrão quando ligado
-        to.inicio = to.inicioOff ? '' : h.inicio;
-        to.final = to.finalOff ? '' : h.final;
+        // "OFF" (herdado do inicioOff/finalOff antigo também é aceito) = oculto; qualquer outra coisa = padrão
+        const inicioIsOff = to.inicio === HORA_OFF_TOKEN || to.inicioOff === true;
+        const finalIsOff = to.final === HORA_OFF_TOKEN || to.finalOff === true;
+        to.inicio = inicioIsOff ? HORA_OFF_TOKEN : h.inicio;
+        to.final = finalIsOff ? HORA_OFF_TOKEN : h.final;
+        delete to.inicioOff;
+        delete to.finalOff;
       });
       // CLIENTE agora é único por célula (só aparece/edita no 1º turno) — unifica
       // eventuais valores divergentes usando o do 1T (ou o primeiro preenchido) como referência
@@ -410,7 +415,7 @@ function normalizeAreas(list){
 const STORAGE_KEY = "gestamp_sequenciamento_producao_v1";
 const ROTATE_SECONDS = 10;
 
-function blankTurno(){ return {projeto:"",lote:"",inicio:"",final:"",obs:"",rack:"",inicioOff:false,finalOff:false}; }
+function blankTurno(){ return {projeto:"",lote:"",inicio:"",final:"",obs:"",rack:""}; }
 function blankTurnos(){ const o={}; TURNOS.forEach(t=>o[t]=blankTurno()); return o; }
 
 function defaultData(){
@@ -1264,16 +1269,14 @@ function renderInner(){
 // célula de horário (INÍCIO/FINAL) — clique alterna entre o horário padrão do turno e em branco
 function toggleHoraCell(to, which, standardValue, onSync){
   // which: 'inicio' ou 'final'
-  const offKey = which+'Off';
   const td = document.createElement('td');
   td.className = 'hora';
-  const isOff = !!to[offKey];
+  const isOff = to[which] === HORA_OFF_TOKEN;
   td.textContent = isOff ? '' : standardValue;
   td.title = isOff ? 'Clique para voltar ao horário padrão ('+standardValue+')' : 'Clique para deixar em branco';
   td.addEventListener('click', ()=>{
     if(historyMode) return;
-    to[offKey] = !to[offKey];
-    to[which] = to[offKey] ? '' : standardValue;
+    to[which] = isOff ? standardValue : HORA_OFF_TOKEN;
     saveData(); markDirty(); render();
     if(onSync) onSync();
   });
@@ -1514,11 +1517,9 @@ function importExcelFile(file){
           projeto: String(r['Cliente'] ?? r['Projeto'] ?? ''),
           lote: String(r['Lote']||''),
           rack: (rackVal==='azul'||rackVal==='roxo'||rackVal==='vermelho'||rackVal==='verde') ? rackVal : '',
-          inicio: inicioVal,
-          final: finalVal,
-          obs: String(r['Observação']||''),
-          inicioOff: inicioVal === '',
-          finalOff: finalVal === ''
+          inicio: inicioVal === '' ? HORA_OFF_TOKEN : inicioVal,
+          final: finalVal === '' ? HORA_OFF_TOKEN : finalVal,
+          obs: String(r['Observação']||'')
         };
       });
 
