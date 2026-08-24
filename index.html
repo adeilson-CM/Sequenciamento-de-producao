@@ -192,6 +192,10 @@
   thead .sub{background:var(--blue-dark);color:#dce8f8;font-weight:600;font-size:clamp(7px,0.62vw,10px);text-transform:uppercase;}
   thead .sub.lote{background:var(--orange);color:#fff;}
   th.pn-head, th.celula-head{background:var(--gray-head);color:#fff;font-size:clamp(8px,0.7vw,11px);}
+  th.sortable-head{cursor:pointer;user-select:none;}
+  th.sortable-head:hover{background:#4a5058;}
+  .sort-arrow{font-size:0.85em;opacity:.9;}
+  .sort-arrow.off{opacity:.45;font-size:0.75em;}
 
   tbody td.pn{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(7.5px,0.68vw,10.5px);white-space:normal;}
   tbody td.celula{background:var(--blue-dark);color:#fff;font-weight:700;font-size:clamp(8px,0.72vw,11px);white-space:normal;}
@@ -570,6 +574,32 @@ function saveData(){
 
 let state = { areas: normalizeAreas(loadData()), current: 0 };
 let filters = { search:"", onlyObs:false, turnos: {"1T":true,"2T":true,"3T":true,"2D":true,"2N":true} };
+let sortState = { key:null, dir:1 }; // key: 'pn' | 'celula' | null (ordem original); dir: 1 asc, -1 desc
+function toggleSort(key){
+  if(sortState.key===key){
+    sortState.dir = -sortState.dir;
+  } else {
+    sortState.key = key; sortState.dir = 1;
+  }
+  render();
+}
+function sortArrow(key){
+  if(sortState.key!==key) return ' <span class="sort-arrow off">⇅</span>';
+  return sortState.dir===1 ? ' <span class="sort-arrow">▲</span>' : ' <span class="sort-arrow">▼</span>';
+}
+function applySortAndFilter(rows){
+  let out = rows.filter(rowMatchesFilter);
+  if(sortState.key){
+    const k = sortState.key, dir = sortState.dir;
+    out = out.slice().sort((a,b)=>{
+      const av = String(a[k]||'').toLowerCase(), bv = String(b[k]||'').toLowerCase();
+      if(av<bv) return -1*dir;
+      if(av>bv) return 1*dir;
+      return 0;
+    });
+  }
+  return out;
+}
 
 // garante que toda área tenha a flag "active" (aparece na rotação automática)
 state.areas.forEach(a=>{ if(a.active===undefined) a.active = true; });
@@ -1144,7 +1174,23 @@ function renderInner(){
   // header rows
   const grpRow = document.getElementById('grpRow');
   const subRow = document.getElementById('subRow');
-  grpRow.innerHTML = '<th class="pn-head" rowspan="2">P.N</th><th class="celula-head" rowspan="2">CÉLULA</th>';
+  grpRow.innerHTML = '';
+  const thPn = document.createElement('th');
+  thPn.className = 'pn-head sortable-head';
+  thPn.rowSpan = 2;
+  thPn.innerHTML = 'P.N' + sortArrow('pn');
+  thPn.title = 'Clique para ordenar por P.N';
+  thPn.addEventListener('click', ()=> toggleSort('pn'));
+  grpRow.appendChild(thPn);
+
+  const thCelula = document.createElement('th');
+  thCelula.className = 'celula-head sortable-head';
+  thCelula.rowSpan = 2;
+  thCelula.innerHTML = 'CÉLULA' + sortArrow('celula');
+  thCelula.title = 'Clique para ordenar por Célula';
+  thCelula.addEventListener('click', ()=> toggleSort('celula'));
+  grpRow.appendChild(thCelula);
+
   subRow.innerHTML = '';
   visibleTurnos.forEach((t,idx)=>{
     const cols = turnoCols(idx===0);
@@ -1189,7 +1235,7 @@ function renderInner(){
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = "";
   const allRows = area.celulas||[];
-  const filteredRows = allRows.filter(rowMatchesFilter);
+  const filteredRows = applySortAndFilter(allRows);
 
   filteredRows.forEach((row)=>{
     const tr = document.createElement('tr');
@@ -1620,6 +1666,7 @@ document.getElementById('onlyObsChk').addEventListener('change', (e)=>{
 document.getElementById('clearFiltersBtn').addEventListener('click', ()=>{
   filters.search = ""; filters.onlyObs = false;
   TURNOS.forEach(t=>filters.turnos[t]=true);
+  sortState.key = null; sortState.dir = 1;
   document.getElementById('searchInput').value = "";
   document.getElementById('onlyObsChk').checked = false;
   render();
