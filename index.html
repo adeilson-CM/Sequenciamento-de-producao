@@ -234,6 +234,12 @@
   .admin-hint{color:#8a5a00;font-size:11.5px;}
   .row-actions{}
   .del-row-btn{background:var(--red);color:#fff;border:none;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1;}
+  .reorder-wrap{display:flex;flex-direction:column;gap:2px;margin-bottom:3px;}
+  .reorder-btn{
+    background:var(--blue-mid);color:#fff;border:none;border-radius:4px;
+    width:20px;height:16px;cursor:pointer;font-size:9px;line-height:1;padding:0;
+  }
+  .reorder-btn:disabled{background:#ccc;cursor:not-allowed;opacity:.5;}
 
   /* ===== FILTER BAR ===== */
   .filter-bar{
@@ -368,7 +374,7 @@
   <button id="reloadSheetBtn">🔄 Recarregar do Sheets</button>
   <button id="exportExcelBtn">📊 Exportar Excel</button>
   <button id="importExcelBtn">📊 Importar Excel</button>
-  <span class="admin-hint">Cada edição já sincroniza sozinha com o Google Sheets (olha a bolinha 🟢 do lado do ⚙ pra ver o status). O botão <b>💾 Salvar no Sheets</b> é só pra reorganizar tudo de uma vez (ex: depois de importar um Excel). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho → verde. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco.</span>
+  <span class="admin-hint">Cada edição já sincroniza sozinha com o Google Sheets (olha a bolinha 🟢 do lado do ⚙ pra ver o status). Nas áreas (acima), use o checkbox pra incluir/excluir da rotação, clique no nome pra renomear, × pra excluir e + pra adicionar. Clique simples na OBSERVAÇÃO alterna a cor do rack: branco → azul → roxo → vermelho → verde. Clique simples no INÍCIO/FINAL alterna entre o horário padrão do turno e em branco. Clique em P.N/CÉLULA no cabeçalho pra ordenar A-Z; as setas ▲▼ ao lado do × reordenam manualmente (só aparecem sem busca/ordenação ativa).</span>
 </div>
 
 <div class="table-wrap">
@@ -710,6 +716,16 @@ function syncSaveRowDebounced(area, row){
 function syncDeleteRow(area, pn, celula){
   if(!syncUrl || !area) return;
   queueAutoSync(()=> doSyncGet('deleteRow', { area: area.name, pn, celula }));
+}
+const reorderTimers = {};
+function syncReorderCelulas(area){
+  if(!syncUrl || !area) return;
+  pauseAutoRefreshForEdit();
+  clearTimeout(reorderTimers[area.name]);
+  reorderTimers[area.name] = setTimeout(()=>{
+    const order = (area.celulas||[]).map(r=> r.pn+'|'+r.celula);
+    queueAutoSync(()=> doSyncGet('reorderCelulas', { area: area.name, order: JSON.stringify(order) }));
+  }, 500);
 }
 // edição quase simultânea de P.N + CÉLULA (renomear uma linha) — agrupa numa única troca
 const identityPending = new WeakMap();
@@ -1236,6 +1252,8 @@ function renderInner(){
   tbody.innerHTML = "";
   const allRows = area.celulas||[];
   const filteredRows = applySortAndFilter(allRows);
+  // reordenar manualmente só faz sentido vendo a ordem "natural" (sem busca/ordenação de coluna ativa)
+  const canReorder = !sortState.key && !filters.search && !filters.onlyObs;
 
   filteredRows.forEach((row)=>{
     const tr = document.createElement('tr');
@@ -1268,6 +1286,34 @@ function renderInner(){
     if(adminOpen){
       const tdA = document.createElement('td');
       tdA.className='row-actions';
+
+      if(canReorder){
+        const idxInArray = allRows.indexOf(row);
+        const upBtn = document.createElement('button');
+        upBtn.className='reorder-btn'; upBtn.textContent='▲'; upBtn.title='Mover pra cima';
+        upBtn.disabled = idxInArray<=0;
+        upBtn.onclick = ()=>{
+          if(idxInArray<=0) return;
+          [allRows[idxInArray-1], allRows[idxInArray]] = [allRows[idxInArray], allRows[idxInArray-1]];
+          saveData(); markDirty(); render();
+          syncReorderCelulas(area);
+        };
+        const downBtn = document.createElement('button');
+        downBtn.className='reorder-btn'; downBtn.textContent='▼'; downBtn.title='Mover pra baixo';
+        downBtn.disabled = idxInArray>=allRows.length-1;
+        downBtn.onclick = ()=>{
+          if(idxInArray>=allRows.length-1) return;
+          [allRows[idxInArray+1], allRows[idxInArray]] = [allRows[idxInArray], allRows[idxInArray+1]];
+          saveData(); markDirty(); render();
+          syncReorderCelulas(area);
+        };
+        const reorderWrap = document.createElement('div');
+        reorderWrap.className = 'reorder-wrap';
+        reorderWrap.appendChild(upBtn);
+        reorderWrap.appendChild(downBtn);
+        tdA.appendChild(reorderWrap);
+      }
+
       const btn = document.createElement('button');
       btn.className='del-row-btn'; btn.textContent='×'; btn.title='Excluir linha';
       btn.onclick = ()=>{
